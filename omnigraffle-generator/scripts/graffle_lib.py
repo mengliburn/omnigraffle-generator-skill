@@ -68,7 +68,8 @@ def shape(gid, x, y, w, h, text='', fill=None, stroke=None, shape_name='Rectangl
     style['stroke'] = {'Color': stroke, 'Width': 1.0} if stroke else {'Draws': 'NO'}
     g = {'Class': 'ShapedGraphic', 'ID': gid, 'Shape': shape_name,
          'Bounds': bounds(x, y, w, h), 'Style': style,
-         'Text': {'Text': rtf(text), 'TextAlongPathGlyphAnchor': 'center'}}
+         'Text': {'Text': rtf(text), 'TextAlongPathGlyphAnchor': 'center',
+                  'Pad': 0, 'VerticalPad': 0}}
     if font_size:
         g['FontInfo'] = {'Size': font_size}
     return g

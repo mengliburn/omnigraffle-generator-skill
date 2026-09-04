@@ -117,10 +117,10 @@ def main():
     ap.add_argument('layout', help='layout.json from extract_flowchart_layout.mjs')
     ap.add_argument('out')
     ap.add_argument('--title', default=None)
-    ap.add_argument('--pad-x', type=float, default=12.0,
-                    help='horizontal padding around node text (default 12)')
-    ap.add_argument('--pad-y', type=float, default=8.0,
-                    help='vertical padding around node text (default 8)')
+    ap.add_argument('--pad-x', type=float, default=0.0,
+                    help='horizontal padding around node text (default 0 = tight)')
+    ap.add_argument('--pad-y', type=float, default=0.0,
+                    help='vertical padding around node text (default 0 = tight)')
     ap.add_argument('--simplify-tol', type=float, default=6.0,
                     help='drop interior line points within this distance of the '
                          'straight chord (default 6; larger straightens more)')
@@ -168,7 +168,8 @@ def main():
                 'stroke': {'Color': colour(0.576, 0.439, 0.859), 'Width': 1.0},
                 'shadow': {'Draws': 'NO'},
             },
-            'Text': {'Text': rtf(n['label']), 'TextAlongPathGlyphAnchor': 'center'},
+            'Text': {'Text': rtf(n['label']), 'TextAlongPathGlyphAnchor': 'center',
+                     'Pad': 0, 'VerticalPad': 0},
             'FitText': 'YES',
         })
         gid += 1
@@ -216,14 +217,15 @@ def main():
     for lb in elabels:
         tw = lb.get('textW') or lb['w']
         th = lb.get('textH') or lb['h']
-        w, h = max(tw, 20.0) + 10, max(th, 14.0) + 6
+        w, h = max(tw, 20.0) + a.pad_x, max(th, 14.0) + a.pad_y
         label_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
             'Bounds': f'{{{{{lb["x"] + ox - w / 2:.2f}, {lb["y"] + oy - h / 2:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
             # opaque fill so the label masks the connector underneath, as Mermaid does
             'Style': {'fill': {'Color': colour(1.0, 1.0, 1.0)},
                       'stroke': {'Draws': 'NO'}, 'shadow': {'Draws': 'NO'}},
-            'Text': {'Text': rtf(lb['label']), 'TextAlongPathGlyphAnchor': 'center'},
+            'Text': {'Text': rtf(lb['label']), 'TextAlongPathGlyphAnchor': 'center',
+                     'Pad': 0, 'VerticalPad': 0},
         })
         gid += 1
 

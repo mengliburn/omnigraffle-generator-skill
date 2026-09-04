@@ -39,10 +39,10 @@ def main():
     ap.add_argument('layout')
     ap.add_argument('out')
     ap.add_argument('--title', default=None)
-    ap.add_argument('--pad-x', type=float, default=16.0,
-                    help='horizontal padding around participant text (default 16)')
-    ap.add_argument('--pad-y', type=float, default=10.0,
-                    help='vertical padding around participant text (default 10)')
+    ap.add_argument('--pad-x', type=float, default=0.0,
+                    help='horizontal padding around participant text (default 0 = tight)')
+    ap.add_argument('--pad-y', type=float, default=0.0,
+                    help='vertical padding around participant text (default 0 = tight)')
     ap.add_argument('--connect-messages', action='store_true',
                     help='attach messages to lifelines (WARNING: OmniGraffle '
                          're-routes them and flattens the timeline)')

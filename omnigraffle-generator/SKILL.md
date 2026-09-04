@@ -80,9 +80,10 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
 
 ### Sizing and line simplification
 
-- **Boxes are sized to their text, not to Mermaid's container.** Mermaid pads generously;
-  the emitters measure the rendered label and add `--pad-x`/`--pad-y` (default 12/8 for
-  flowchart nodes, 16/10 for participants). Only plain rectangles are tightened — cylinders,
+- **Boxes are tight to their text.** Mermaid pads generously; the emitters measure the
+  rendered label and size the shape to exactly that, with `--pad-x`/`--pad-y` (default 0)
+  if you want breathing room. OmniGraffle's own text inset is zeroed (`Pad`/`VerticalPad`)
+  so a tight box does not re-wrap the text. Only plain rectangles are tightened — cylinders,
   stadiums and subroutines keep Mermaid's height, since their caps need the room. The
   original centre is preserved, so the layout stays coherent and connected edges re-route
   themselves.
