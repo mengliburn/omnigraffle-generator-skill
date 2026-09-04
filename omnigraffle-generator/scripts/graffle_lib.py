@@ -196,3 +196,52 @@ def clip_to_boxes(points, src_rect, tgt_rect):
         if hit:
             pts[-1] = hit
     return pts
+
+
+def _half_extent(r, ux, uy):
+    return (r[2] / 2) * abs(ux) + (r[3] / 2) * abs(uy)
+
+
+def compaction_scale(rects, edges, edge_gap=24.0, label_extent=None, pair_margin=16.0):
+    """Smallest uniform scale for node *positions* that still leaves room.
+
+    Shapes are tightened to their text but Mermaid positioned them for its own
+    padded boxes, so every connector is left far longer than it needs to be.
+    Scaling the centres (never the sizes) about the origin keeps the layout's
+    relative arrangement exactly while pulling everything together.
+
+    The scale is the tightest that satisfies, for every connected pair, a clear
+    run of `edge_gap` (plus that edge's label, if any), and for every pair of
+    boxes, non-overlap on at least one axis.
+    """
+    import math
+    label_extent = label_extent or {}
+    need = 0.0
+    keys = list(rects)
+
+    for e in edges:
+        a, b = rects.get(e.get('src')), rects.get(e.get('tgt'))
+        if not a or not b or e.get('src') == e.get('tgt'):
+            continue
+        ca = (a[0] + a[2] / 2, a[1] + a[3] / 2)
+        cb = (b[0] + b[2] / 2, b[1] + b[3] / 2)
+        dx, dy = cb[0] - ca[0], cb[1] - ca[1]
+        d = math.hypot(dx, dy)
+        if d < 1e-6:
+            continue
+        ux, uy = dx / d, dy / d
+        clear = edge_gap + label_extent.get(id(e), 0.0)
+        need = max(need, (_half_extent(a, ux, uy) + _half_extent(b, ux, uy) + clear) / d)
+
+    for i, ka in enumerate(keys):
+        for kb in keys[i + 1:]:
+            a, b = rects[ka], rects[kb]
+            ca = (a[0] + a[2] / 2, a[1] + a[3] / 2)
+            cb = (b[0] + b[2] / 2, b[1] + b[3] / 2)
+            dx, dy = abs(cb[0] - ca[0]), abs(cb[1] - ca[1])
+            sx = ((a[2] + b[2]) / 2 + pair_margin) / dx if dx > 1e-6 else float('inf')
+            sy = ((a[3] + b[3]) / 2 + pair_margin) / dy if dy > 1e-6 else float('inf')
+            axis = min(sx, sy)          # separation on either axis suffices
+            if axis != float('inf'):
+                need = max(need, axis) if axis < 1.0 else need
+    return min(1.0, need) if need > 0 else 1.0

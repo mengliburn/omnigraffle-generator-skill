@@ -26,7 +26,7 @@ import re
 import sys
 import zipfile
 
-from graffle_lib import clip_to_boxes, colour, rtf, simplify_points
+from graffle_lib import clip_to_boxes, colour, compaction_scale, rtf, simplify_points
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
@@ -121,6 +121,10 @@ def main():
                     help='horizontal padding around node text (default 0 = tight)')
     ap.add_argument('--pad-y', type=float, default=0.0,
                     help='vertical padding around node text (default 0 = tight)')
+    ap.add_argument('--edge-gap', type=float, default=16.0,
+                    help='clear run to keep on each connector beyond its label (default 16)')
+    ap.add_argument('--no-compact', action='store_true',
+                    help='keep Mermaid spacing instead of pulling the tightened shapes together')
     ap.add_argument('--simplify-tol', type=float, default=6.0,
                     help='drop interior line points within this distance of the '
                          'straight chord (default 6; larger straightens more)')
@@ -143,6 +147,85 @@ def main():
                     textW=l.get('textW'), textH=l.get('textH'))
                for l in layout['edgeLabels']]
 
+    # --- tighten shapes, then pull the layout together -----------------------
+    sizes, centres = {}, {}
+    for key, n in nodes.items():
+        w, h = n['w'], n['h']
+        # Mermaid pads its containers generously. Shrink plain rectangles to their
+        # measured text; leave cylinders/stadiums alone, their caps need the room.
+        if n.get('shape') == 'rect' and n.get('textW'):
+            w = min(w, n['textW'] + a.pad_x)
+            h = min(h, n['textH'] + a.pad_y)
+        sizes[key] = (w, h)
+        centres[key] = (n['x'] + n['w'] / 2, n['y'] + n['h'] / 2)
+
+    scale = 1.0
+    if not a.no_compact:
+        import math
+        base = {k: (centres[k][0] - sizes[k][0] / 2, centres[k][1] - sizes[k][1] / 2,
+                    sizes[k][0], sizes[k][1]) for k in nodes}
+        # how much of each connector its own label will occupy, along that edge
+        extent = {}
+        for e in edges:
+            if not (e['src'] in centres and e['tgt'] in centres):
+                continue
+            ca, cb = centres[e['src']], centres[e['tgt']]
+            dx, dy = cb[0] - ca[0], cb[1] - ca[1]
+            d = math.hypot(dx, dy)
+            if d < 1e-6:
+                continue
+            mid = ((ca[0] + cb[0]) / 2, (ca[1] + cb[1]) / 2)
+            near = min(elabels, key=lambda l: math.hypot(l['x'] - mid[0], l['y'] - mid[1]),
+                       default=None)
+            if near and math.hypot(near['x'] - mid[0], near['y'] - mid[1]) < d / 2:
+                ux, uy = dx / d, dy / d
+                extent[id(e)] = abs((near.get('textW') or near['w']) * ux) \
+                    + abs((near.get('textH') or near['h']) * uy)
+        scale = compaction_scale(base, edges, edge_gap=a.edge_gap, label_extent=extent)
+
+    if scale < 1.0:
+        # cluster membership from the original geometry, so the containers can be
+        # rebuilt around their (now closer together) members
+        members = {}
+        for ci, c in enumerate(layout.get('clusters', [])):
+            members[ci] = [k for k, n in nodes.items()
+                           if n['x'] >= c['x'] - 1 and n['y'] >= c['y'] - 1
+                           and n['x'] + n['w'] <= c['x'] + c['w'] + 1
+                           and n['y'] + n['h'] <= c['y'] + c['h'] + 1]
+        for k in centres:
+            centres[k] = (centres[k][0] * scale, centres[k][1] * scale)
+        for e in edges:
+            e['points'] = [(x * scale, y * scale) for x, y in e['points']]
+        for l in elabels:
+            l['x'] *= scale
+            l['y'] *= scale
+        for ci, c in enumerate(layout.get('clusters', [])):
+            mk = members.get(ci) or []
+            if not mk:
+                c['x'] *= scale
+                c['y'] *= scale
+                continue
+            padl = min(nodes[k]['x'] for k in mk) - c['x']
+            padt = min(nodes[k]['y'] for k in mk) - c['y']
+            padr = c['x'] + c['w'] - max(nodes[k]['x'] + nodes[k]['w'] for k in mk)
+            padb = c['y'] + c['h'] - max(nodes[k]['y'] + nodes[k]['h'] for k in mk)
+            xs0 = min(centres[k][0] - sizes[k][0] / 2 for k in mk)
+            ys0 = min(centres[k][1] - sizes[k][1] / 2 for k in mk)
+            xs1 = max(centres[k][0] + sizes[k][0] / 2 for k in mk)
+            ys1 = max(centres[k][1] + sizes[k][1] / 2 for k in mk)
+            c['x'], c['y'] = xs0 - padl, ys0 - padt
+            c['w'], c['h'] = (xs1 + padr) - (xs0 - padl), (ys1 + padb) - (ys0 - padt)
+        allx = [centres[k][0] - sizes[k][0] / 2 for k in nodes] \
+            + [c['x'] for c in layout.get('clusters', [])]
+        ally = [centres[k][1] - sizes[k][1] / 2 for k in nodes] \
+            + [c['y'] for c in layout.get('clusters', [])]
+        allx2 = [centres[k][0] + sizes[k][0] / 2 for k in nodes] \
+            + [c['x'] + c['w'] for c in layout.get('clusters', [])]
+        ally2 = [centres[k][1] + sizes[k][1] / 2 for k in nodes] \
+            + [c['y'] + c['h'] for c in layout.get('clusters', [])]
+        minx, miny = min(allx), min(ally)
+        vw, vh = max(allx2) - minx, max(ally2) - miny
+
     PAD = 30.0
     ox, oy = PAD - minx, PAD - miny
     gid = 2
@@ -153,15 +236,8 @@ def main():
     for key, n in nodes.items():
         idmap[key] = gid
         shape_name = SHAPES.get(n.get('shape'), 'Rectangle')
-        w, h = n['w'], n['h']
-        # Mermaid pads its containers generously. Shrink plain rectangles to their
-        # measured text; leave cylinders/stadiums alone, since their caps need the
-        # extra height. Keep the original centre so the layout stays coherent and
-        # the connected edges simply re-route.
-        if n.get('shape') == 'rect' and n.get('textW'):
-            w = min(w, n['textW'] + a.pad_x)
-            h = min(h, n['textH'] + a.pad_y)
-        cx, cy = n['x'] + n['w'] / 2, n['y'] + n['h'] / 2
+        w, h = sizes[key]
+        cx, cy = centres[key]
         rects[key] = (cx - w / 2, cy - h / 2, w, h)
         node_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid,
@@ -250,7 +326,8 @@ def main():
         z.writestr('data.plist', plistlib.dumps(doc, fmt=plistlib.FMT_BINARY))
 
     print(f'{a.out}: {len(nodes)} nodes, {len(cluster_gfx)} subgraphs, {len(edges)} edges '
-          f'({connected} connected), {len(elabels)} edge labels, 0 groups')
+          f'({connected} connected), {len(elabels)} edge labels, 0 groups, '
+          f'layout scale {scale:.3f}')
     unresolved = [e for e in edges if e['src'] not in idmap or e['tgt'] not in idmap]
     if unresolved:
         print(f'WARNING: {len(unresolved)} edge(s) could not be resolved to nodes',

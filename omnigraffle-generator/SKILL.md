@@ -90,6 +90,13 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
   `--pad-x`/`--pad-y` (default 0) add breathing room if wanted. Only plain rectangles are
   tightened — cylinders, stadiums and subroutines keep Mermaid's height, since their caps
   need the room. Centres are preserved, so connected edges simply re-route.
+- **The layout is compacted after the shapes shrink.** Mermaid positions nodes for its own
+  padded boxes, so tightening the shapes leaves the connectors far longer than they need to
+  be. Node *centres* (never sizes) are scaled uniformly about the origin, which preserves
+  the arrangement exactly. The scale is the tightest that still gives every connector a
+  clear run of `--edge-gap` (default 16) beyond its own label, and keeps every pair of boxes
+  apart on at least one axis. A diagram whose labels are already wider than the space
+  available stays at scale 1.0 rather than let a label swallow its line.
 - **Connectors are clipped to the tightened shapes.** Mermaid routes edges against its own
   padded containers, so once the shapes shrink the original endpoints sit well outside them
   and leave a visible gap. Each polyline is re-anchored at the box centres and clipped to
