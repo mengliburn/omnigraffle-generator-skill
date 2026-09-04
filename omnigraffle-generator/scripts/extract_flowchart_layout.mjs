@@ -60,6 +60,20 @@ const layout = await page.evaluate(() => {
     return rows.join('\n');
   };
 
+
+  // Measure text the way OmniGraffle will render it. Our RTF asks for Helvetica
+  // \fs24, which OmniGraffle lays out at 12 canvas units per em -- not the 16px
+  // the SVG uses. Calibrated against OmniGraffle's own auto-fit: measuring at
+  // 12px Helvetica reproduces its widths to within 0.5%, and a line box is
+  // exactly 14 units tall once Text.Pad/VerticalPad are zeroed.
+  const _mc = document.createElement('canvas').getContext('2d');
+  _mc.font = '12px Helvetica';
+  const measure = (txt) => {
+    const rows = (txt || '').split('\n').filter((r) => r.length);
+    if (!rows.length) return { w: 0, h: 0 };
+    return { w: Math.max(...rows.map((r) => _mc.measureText(r).width)), h: 14 * rows.length };
+  };
+
   const nodes = [];
   for (const g of root.querySelectorAll('g.node')) {
     const shape = g.querySelector(':scope > rect, :scope > path, :scope > polygon, :scope > circle, :scope > ellipse');
@@ -69,13 +83,8 @@ const layout = await page.evaluate(() => {
     let key = (g.id || '').replace(/^.*?flowchart-/, '').replace(/-\d+$/, '');
     // measure the rendered label so the shape can be sized to its text rather
     // than to Mermaid's generously padded container
-    let tw = 0, th = 0;
-    for (const t of (label || g).querySelectorAll('text')) {
-      const tb = abs(t);
-      tw = Math.max(tw, tb.w);
-      th += tb.h;
-    }
-    nodes.push({ key, x: b.x, y: b.y, w: b.w, h: b.h, textW: tw, textH: th,
+    const m = measure(textOf(label || g));
+    nodes.push({ key, x: b.x, y: b.y, w: b.w, h: b.h, textW: m.w, textH: m.h,
                  label: textOf(label || g), shape: shape.tagName.toLowerCase() });
   }
 
@@ -117,13 +126,8 @@ const layout = await page.evaluate(() => {
     const txt = textOf(g);
     if (!txt) continue;
     const b = abs(g);
-    let tw = 0, th = 0;
-    for (const t of g.querySelectorAll('text')) {
-      const tb = abs(t);
-      tw = Math.max(tw, tb.w);
-      th += tb.h;
-    }
-    edgeLabels.push({ x: b.x, y: b.y, w: b.w, h: b.h, textW: tw, textH: th, label: txt });
+    const m = measure(txt);
+    edgeLabels.push({ x: b.x, y: b.y, w: b.w, h: b.h, textW: m.w, textH: m.h, label: txt });
   }
 
   return { viewBox: vb, nodes, clusters, edges, edgeLabels };

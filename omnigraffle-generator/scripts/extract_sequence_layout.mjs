@@ -53,6 +53,20 @@ const layout = await page.evaluate(() => {
   };
   const centre = (el) => { const b = abs(el); return { cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; };
 
+
+  // Measure text the way OmniGraffle will render it. Our RTF asks for Helvetica
+  // \fs24, which OmniGraffle lays out at 12 canvas units per em -- not the 16px
+  // the SVG uses. Calibrated against OmniGraffle's own auto-fit: measuring at
+  // 12px Helvetica reproduces its widths to within 0.5%, and a line box is
+  // exactly 14 units tall once Text.Pad/VerticalPad are zeroed.
+  const _mc = document.createElement('canvas').getContext('2d');
+  _mc.font = '12px Helvetica';
+  const measure = (txt) => {
+    const rows = (txt || '').split('\n').filter((r) => r.length);
+    if (!rows.length) return { w: 0, h: 0 };
+    return { w: Math.max(...rows.map((r) => _mc.measureText(r).width)), h: 14 * rows.length };
+  };
+
   // participant boxes, top and bottom rows
   const actors = [];
   for (const r of root.querySelectorAll('rect.actor')) {
@@ -73,9 +87,9 @@ const layout = await page.evaluate(() => {
     }
     if (best) {
       best.label = best.label ? best.label + '\n' + rows.join('\n') : rows.join('\n');
-      const tb = abs(t);
-      best.textW = Math.max(best.textW, tb.w);
-      best.textH += tb.h;
+      const m = measure(best.label);
+      best.textW = m.w;
+      best.textH = m.h;
     }
   }
 

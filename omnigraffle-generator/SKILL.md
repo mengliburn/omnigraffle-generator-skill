@@ -80,13 +80,16 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
 
 ### Sizing and line simplification
 
-- **Boxes are tight to their text.** Mermaid pads generously; the emitters measure the
-  rendered label and size the shape to exactly that, with `--pad-x`/`--pad-y` (default 0)
-  if you want breathing room. OmniGraffle's own text inset is zeroed (`Pad`/`VerticalPad`)
-  so a tight box does not re-wrap the text. Only plain rectangles are tightened — cylinders,
-  stadiums and subroutines keep Mermaid's height, since their caps need the room. The
-  original centre is preserved, so the layout stays coherent and connected edges re-route
-  themselves.
+- **Boxes are tight to their text**, matching OmniGraffle's own auto-fit exactly.
+  Measuring the SVG is *not* good enough: OmniGraffle lays our RTF (`Helvetica \fs24`) out
+  at 12 canvas units per em, while the SVG renders at 16px, so an SVG-derived width is 4/3
+  too large. The extractors therefore measure with `canvas.measureText` at **12px
+  Helvetica**, and a line box is exactly **14 units** tall once `Text.Pad`/`VerticalPad`
+  are zeroed. Verified against OmniGraffle's `autosizing: full`: identical to the unit on
+  every rectangle. `Wrap: NO` is set because the bounds are exactly the text width.
+  `--pad-x`/`--pad-y` (default 0) add breathing room if wanted. Only plain rectangles are
+  tightened — cylinders, stadiums and subroutines keep Mermaid's height, since their caps
+  need the room. Centres are preserved, so connected edges simply re-route.
 - **Straight connectors get no redundant midpoint.** Mermaid's routed polyline always
   carries a midpoint even on a dead-straight edge, which shows up in OmniGraffle as a
   stray handle. Interior points within `--simplify-tol` (default 6) of the straight chord

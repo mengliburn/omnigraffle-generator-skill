@@ -139,7 +139,9 @@ def main():
                           points=[(float(x), float(y)) for x, y in e['points']],
                           dashed=bool(e['dashed'])))
     elabels = [dict(x=l['x'] + l['w'] / 2, y=l['y'] + l['h'] / 2,
-                    w=l['w'], h=l['h'], label=l['label']) for l in layout['edgeLabels']]
+                    w=l['w'], h=l['h'], label=l['label'],
+                    textW=l.get('textW'), textH=l.get('textH'))
+               for l in layout['edgeLabels']]
 
     PAD = 30.0
     ox, oy = PAD - minx, PAD - miny
@@ -163,6 +165,8 @@ def main():
             'Class': 'ShapedGraphic', 'ID': gid,
             'Shape': shape_name,
             'Bounds': f'{{{{{cx - w / 2 + ox:.2f}, {cy - h / 2 + oy:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
+            # bounds are exactly the text width, so forbid wrapping outright
+            'Wrap': 'NO',
             'Style': {
                 'fill': {'Color': colour(0.925, 0.925, 1.0)},
                 'stroke': {'Color': colour(0.576, 0.439, 0.859), 'Width': 1.0},
@@ -170,7 +174,6 @@ def main():
             },
             'Text': {'Text': rtf(n['label']), 'TextAlongPathGlyphAnchor': 'center',
                      'Pad': 0, 'VerticalPad': 0},
-            'FitText': 'YES',
         })
         gid += 1
 
@@ -221,6 +224,7 @@ def main():
         label_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
             'Bounds': f'{{{{{lb["x"] + ox - w / 2:.2f}, {lb["y"] + oy - h / 2:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
+            'Wrap': 'NO',
             # opaque fill so the label masks the connector underneath, as Mermaid does
             'Style': {'fill': {'Color': colour(1.0, 1.0, 1.0)},
                       'stroke': {'Draws': 'NO'}, 'shadow': {'Draws': 'NO'}},
