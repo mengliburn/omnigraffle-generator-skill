@@ -150,12 +150,12 @@ def main():
     PAD = 30.0
     ox, oy = PAD - minx, PAD - miny
     gid = 2
-    graphics = []
+    node_gfx, line_gfx, label_gfx = [], [], []
     idmap = {}
 
     for key, n in nodes.items():
         idmap[key] = gid
-        graphics.append({
+        node_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid,
             'Shape': SHAPES.get(n.get('shape'), 'Rectangle'),
             'Bounds': f'{{{{{n["x"] + ox:.2f}, {n["y"] + oy:.2f}}}, {{{n["w"]:.2f}, {n["h"]:.2f}}}}}',
@@ -189,18 +189,23 @@ def main():
             g['Tail'] = {'ID': idmap[e['src']]}
             g['Head'] = {'ID': idmap[e['tgt']]}
             connected += 1
-        graphics.append(g)
+        line_gfx.append(g)
         gid += 1
 
     for lb in elabels:
         w, h = max(lb['w'], 20.0) + 10, max(lb['h'], 14.0) + 6
-        graphics.append({
+        label_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
             'Bounds': f'{{{{{lb["x"] + ox - w / 2:.2f}, {lb["y"] + oy - h / 2:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
-            'Style': {'fill': {'Draws': 'NO'}, 'stroke': {'Draws': 'NO'}, 'shadow': {'Draws': 'NO'}},
+            # opaque fill so the label masks the connector underneath, as Mermaid does
+            'Style': {'fill': {'Color': colour(1.0, 1.0, 1.0)},
+                      'stroke': {'Draws': 'NO'}, 'shadow': {'Draws': 'NO'}},
             'Text': {'Text': rtf(lb['label']), 'TextAlongPathGlyphAnchor': 'center'},
         })
         gid += 1
+
+    # GraphicsList is FRONT-to-back: labels must precede lines to mask them
+    graphics = label_gfx + node_gfx + line_gfx
 
     doc = plistlib.loads(TEMPLATE.read_bytes())
     sheet = doc['Sheets'][0]
