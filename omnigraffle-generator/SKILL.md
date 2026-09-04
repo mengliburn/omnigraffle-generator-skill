@@ -1,12 +1,13 @@
 ---
 name: omnigraffle-generator
 description: |
-  Convert Mermaid diagrams into SVGs that OmniGraffle imports faithfully, and assemble
-  them into a single multi-canvas .graffle document (one diagram per canvas). Handles the
-  OmniGraffle SVG-importer limitations that silently destroy text, colour and layout.
+  Convert Mermaid diagrams into editable OmniGraffle documents — flat objects, connectors
+  that are really connected, one diagram per canvas. Also produces SVGs that survive
+  OmniGraffle's importer. Encodes the OmniGraffle file-format and importer behaviour needed
+  to get this right.
 
-  Trigger: "mermaid to omnigraffle", "omnigraffle svg", "open diagram in omnigraffle",
-  "multi-canvas graffle", "omnigraffle-generator"
+  Trigger: "mermaid to omnigraffle", "omnigraffle diagram", "open diagram in omnigraffle",
+  "multi-canvas graffle", "omnigraffle svg", "omnigraffle-generator"
 user-invocable: true
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Grep", "Glob"]
 ---
@@ -15,253 +16,216 @@ allowed-tools: ["Bash", "Read", "Write", "Edit", "Grep", "Glob"]
 
 Turn Mermaid diagrams into **editable OmniGraffle vector art**, not screenshots.
 
-A stock `mmdc` SVG *looks* correct in a browser and imports into OmniGraffle almost
-entirely broken. Every transform in this skill exists because of a specific, observed
-OmniGraffle importer limitation — see [Why each step exists](#why-each-step-exists).
-Do not skip steps because the SVG "looks fine"; a browser will not show you any of these
-failures.
-
-`$SKILL` below is this skill's directory.
+`$SKILL` below is this skill's directory. Everything here was established by generating
+files, reading them back out of OmniGraffle, and fixing what was wrong — the
+[behaviour tables](#omnigraffle-behaviour-that-drives-the-design) are observations, not
+guesses. Trust them over intuition; several are the opposite of what you would expect.
 
 ---
 
-## Two modes — pick one
+## Two modes — use native unless you can't
 
 | | **Native** (preferred) | **SVG import** |
 |---|---|---|
-| Output | OmniGraffle's own objects, written straight into `data.plist` | SVG, imported by OmniGraffle |
-| Grouping | none — flat objects | deeply nested groups (6 levels, 40+ groups) |
-| Arrows | line + arrowhead are **one** object | line and arrowhead are two objects |
+| How | writes OmniGraffle's object model into `data.plist` | writes an SVG, OmniGraffle imports it |
+| Grouping | none — flat objects | nested groups, 6 deep, 40+ per diagram |
+| Arrows | line + arrowhead are **one** object | two separate objects |
 | Connections | real `Head`/`Tail` — lines re-route when a box moves | none; lines merely end near a box |
-| Diagram support | flowcharts + sequence diagrams | anything Mermaid renders |
+| Layout | shapes tightened to text, layout compacted | Mermaid's spacing |
+| Diagrams | flowcharts, sequence diagrams | anything Mermaid renders |
+| Needs OmniGraffle | no | yes (no headless mode) |
 
-Use **native** for flowcharts and sequence diagrams. Fall back to **SVG import** for
-diagram types with no native mapping (class, state, ER, gantt, pie), or when you want an
-SVG for a browser or GitHub as well.
+The SVG importer **only ever produces `ShapedGraphic`** — not one `LineGraphic` — which is
+why arrowheads and connections are impossible through it. Use SVG import only for diagram
+types with no native mapping (class, state, ER, gantt, pie), or when you also want an SVG
+for a browser or GitHub.
 
 ---
 
 ## Native mode
 
+One command, Markdown in, verified document out:
+
 ```bash
-python3 $SKILL/scripts/extract_mermaid.py DOC.md out/mmd      # optional
-$SKILL/scripts/render_mermaid.sh out/raw out/mmd/*.mmd        # do NOT run og_fix_svg
-
-# flowchart
-node $SKILL/scripts/extract_flowchart_layout.mjs out/raw/x.svg > x.json
-python3 $SKILL/scripts/mermaid_flowchart_to_graffle.py x.json x.graffle --title "Title"
-
-# sequence diagram
-node $SKILL/scripts/extract_sequence_layout.mjs out/raw/y.svg > y.json
-python3 $SKILL/scripts/mermaid_sequence_to_graffle.py y.json y.graffle --title "Title"
-
-# one document, one diagram per canvas
-python3 $SKILL/scripts/merge_graffle.py -o all.graffle "x.graffle=01 · X" "y.graffle=02 · Y"
+$SKILL/scripts/make_native_graffle.sh OUT.graffle DOC.md
+$SKILL/scripts/make_native_graffle.sh OUT.graffle a.mmd b.mmd
 ```
 
-Pick the extractor by inspecting the SVG: `grep -q messageLine` means sequence diagram.
+It extracts each ```` ```mermaid ```` block, renders it, picks the right extractor per
+diagram (`grep -q messageLine` ⇒ sequence), builds one canvas each, merges, and runs
+`verify_graffle.py`. Canvas titles come from the Markdown heading above each diagram.
+
+The steps individually, if you need to tune one:
+
+```bash
+python3 $SKILL/scripts/extract_mermaid.py DOC.md out/mmd
+$SKILL/scripts/render_mermaid.sh out/raw out/mmd/*.mmd      # do NOT run og_fix_svg here
+
+node    $SKILL/scripts/extract_flowchart_layout.mjs out/raw/x.svg > x.json
+python3 $SKILL/scripts/mermaid_flowchart_to_graffle.py x.json x.graffle --title "01 · X"
+
+node    $SKILL/scripts/extract_sequence_layout.mjs  out/raw/y.svg > y.json
+python3 $SKILL/scripts/mermaid_sequence_to_graffle.py y.json y.graffle --title "02 · Y"
+
+python3 $SKILL/scripts/merge_graffle.py -o all.graffle "x.graffle=01 · X" "y.graffle=02 · Y"
+python3 $SKILL/scripts/verify_graffle.py all.graffle out/mmd
+```
 
 **Native mode reads Mermaid's semantic markup, so it must run on the raw render — before
 `og_fix_svg.mjs`, which deliberately destroys that markup.**
 
-### Facts the emitters depend on
+### Tuning
 
-All established by drawing the equivalent objects in OmniGraffle and reading the plist back:
+| Flag | Builder | Default | Effect |
+|---|---|---|---|
+| `--pad-x` / `--pad-y` | both | `0` | Breathing room around text. 0 = shape is exactly its text |
+| `--edge-gap` | flowchart | `16` | Clear run on a connector beyond its own label |
+| `--node-gap` | flowchart | `16` | Gap between neighbours within a rank |
+| `--simplify-tol` | flowchart | `6` | Collinear tolerance when a routed polyline is kept |
+| `--keep-routing` | flowchart | off | Keep Mermaid's polylines instead of straight connectors |
+| `--no-compact` | flowchart | off | Keep Mermaid's spacing |
+| `--connect-messages` | sequence | off | Attach messages to lifelines (**flattens the timeline**) |
 
-- `GraphicsList` is **front-to-back** — the first entry draws on top. Emit labels first,
-  lines last, or connectors paint over the labels that are supposed to mask them.
-- A `LineGraphic` **without `LogicalPath` is silently discarded** on load.
-- Shape text is **RTF**, and RTF is cp1252 — non-ASCII must use `\uN?` escapes or `—`
-  arrives as `â€"`.
-- Connections are `Head`/`Tail` `{"ID": n}`, and the target may be a `ShapedGraphic` **or
-  another `LineGraphic`**.
-- Nested subgraphs must be emitted smallest-first, or the outer container paints over the
+---
+
+## OmniGraffle behaviour that drives the design
+
+### File format
+
+| Fact | Consequence |
+|---|---|
+| A `.graffle` is a **ZIP** whose `data.plist` holds a `Sheets` array, one entry per canvas | Multi-canvas documents are built by merging plists, not through the GUI |
+| `GraphicsList` is **front-to-back** — the first entry draws on top | Emit labels first, connectors last, or the lines paint over the labels meant to mask them |
+| A `LineGraphic` **without `LogicalPath` is silently discarded** on load | Cost five lines with no error the first time |
+| Shape text is **RTF**, and RTF is cp1252 | Non-ASCII needs `\uN?` escapes or `—` arrives as `â€"` |
+| Arrowheads are `Style.stroke.HeadArrow` on the line | Line and arrow are one object |
+| Connections are `Head`/`Tail` `{"ID": n}` | The target may be a `ShapedGraphic` **or another `LineGraphic`** |
+| Graphic `ID`s restart near 0 in every file | Merging must offset them per sheet; `Head`/`Tail` refs renumber with them |
+| `CanvasSizingMode` `1` = Flexible; `AutoAdjust` is a **per-side bitmask** | `15` = all four sides. `1` is top only — easy to get wrong |
+| `PageBreaks = 'NO'` at document level | Otherwise page-break rules are drawn across wide diagrams |
+
+### Text metrics
+
+OmniGraffle lays our RTF (`Helvetica \fs24`) out at **12 canvas units per em**, while the
+SVG renders at 16px — so an SVG-derived width is 4/3 too large. Measuring with
+`canvas.measureText` at **12px Helvetica** reproduces OmniGraffle's widths to within 0.5%
+(ratios 0.7473–0.7506 over four strings), and a line box is exactly **14 units** tall once
+`Text.Pad`/`VerticalPad` are zeroed. Checked against `autosizing: full` — identical to the
+unit on every rectangle. `Wrap: NO` is required because the bounds are exactly the text
+width, and any sub-pixel difference would otherwise re-wrap the label.
+
+### SVG importer limitations
+
+All of these render **correctly in a browser**, which is why they are so easy to ship broken.
+
+| Behaviour | Symptom | Handled by |
+|---|---|---|
+| Ignores `<foreignObject>` | Every flowchart shape imports **blank** | `render_mermaid.sh` (`htmlLabels:false`) |
+| Merges sibling `<tspan>`s into one left-aligned paragraph | Multi-line labels collapse, stop being centred | `og_fix_svg.mjs` — one `<text>` per row |
+| Cannot parse `rgba()`; falls back to **black** | Black boxes behind edge labels | `og_fix_svg.mjs` — `rgb()` + `*-opacity` |
+| Ignores the `<style>` block | Shapes lose all fill/stroke/font | `og_fix_svg.mjs` — inline computed styles |
+| Renders `<marker>` **defs** as objects, and doesn't apply them | Arrowheads lost **and** junk dumped at the origin | `og_fix_svg.mjs` — real `<polygon>` arrowheads |
+| Draws zero-area rects as filled boxes | Stray boxes | `og_fix_svg.mjs` |
+| Ignores **ancestor transforms** for some elements | Parts scattered at raw coordinates when diagrams are offset | `combine_svgs.py` — bakes transforms into coordinates |
+| Mangles `<line>` | Lifelines collapse to 1×1 | `og_fix_svg.mjs` — `<line>` → `<path>` |
+
+### Mermaid quirk
+
+`insertEdgeLabel()` passes `width: undefined` to `createText()`, which falls back to a
+hardcoded 200px and **ignores `flowchart.wrappingWidth`**, hard-splitting long identifiers
+mid-word (`requeueRequestsPCollectio` / `n`). `render_mermaid.sh` patches it.
+
+### Automation limits — do not waste time here
+
+- **Clipboard copy/paste is ignored.** Scripted ⌘C/⌘V between documents pastes nothing.
+- **`duplicate` fails across documents** — `Can't make ... into type reference`.
+- **`export` is unreliable** — `-10000` / `-1701` even with explicit settings.
+- **`set zoom` updates the property but not the view.** Use the View ▸ Zoom menu items
+  (`Fit in Window`, `Zoom to Selection`); coordinate clicks on the toolbar are flaky, and
+  another app can steal focus mid-screenshot — re-check `frontmost` before capturing.
+- **`move` works within one document**; `autosizing: full` re-fits a shape that has no
+  `FitText`, which is how the text metrics above were calibrated.
+- OmniGraffle wedges occasionally; if AppleScript starts timing out, quit and relaunch it.
+
+---
+
+## Layout decisions
+
+- **Shapes are tight to their text**, matching OmniGraffle's own auto-fit exactly. Only
+  plain rectangles are tightened — cylinders, stadiums and subroutines keep Mermaid's
+  height, since their caps need the room.
+- **The layout is compacted rank by rank.** A single uniform scale does not work: it is
+  dominated by the worst edge in the diagram, so one wide label keeps every other connector
+  long, and dense diagrams refuse to compact at all. Dagre lays nodes out in ranks, so each
+  gap between consecutive ranks is closed independently, down to `--edge-gap` plus the
+  widest label crossing *that* gap. Neighbours within a rank are closed to `--node-gap`,
+  otherwise diagonal edges stay long. Order and cross-axis alignment are preserved.
+- **Connectors are plain two-point lines** between the two box centres, clipped to their
+  borders — no stray midpoint handles, and both ends land exactly on the edge. Self-loops
+  keep their route. Anything still routed goes through `--simplify-tol`, **including
+  sequence-diagram lifelines**, where clipping otherwise leaves the old endpoints behind.
+- **Labels are opaque and frontmost** so they mask the connector they name, and no label is
+  allowed to blanket its whole line.
+- **Nested subgraphs are emitted smallest-first**, or the outer container paints over the
   inner one.
-
-### Sizing and line simplification
-
-- **Boxes are tight to their text**, matching OmniGraffle's own auto-fit exactly.
-  Measuring the SVG is *not* good enough: OmniGraffle lays our RTF (`Helvetica \fs24`) out
-  at 12 canvas units per em, while the SVG renders at 16px, so an SVG-derived width is 4/3
-  too large. The extractors therefore measure with `canvas.measureText` at **12px
-  Helvetica**, and a line box is exactly **14 units** tall once `Text.Pad`/`VerticalPad`
-  are zeroed. Verified against OmniGraffle's `autosizing: full`: identical to the unit on
-  every rectangle. `Wrap: NO` is set because the bounds are exactly the text width.
-  `--pad-x`/`--pad-y` (default 0) add breathing room if wanted. Only plain rectangles are
-  tightened — cylinders, stadiums and subroutines keep Mermaid's height, since their caps
-  need the room. Centres are preserved, so connected edges simply re-route.
-- **The layout is compacted rank by rank after the shapes shrink.** Mermaid positions nodes
-  for its own padded boxes, so tightening the shapes leaves every connector far longer than
-  it needs to be. A single uniform scale does not work: it is dominated by the worst edge in
-  the diagram, so one wide label keeps every other connector long. Dagre lays nodes out in
-  ranks along one axis, so each gap between consecutive ranks is closed independently, down
-  to `--edge-gap` (default 16) plus the widest label crossing *that* gap. Neighbours within
-  a rank are closed up to `--node-gap` as well, otherwise diagonal edges stay long. Order
-  and cross-axis alignment are preserved.
-- **Connectors are clipped to the tightened shapes.** Mermaid routes edges against its own
-  padded containers, so once the shapes shrink the original endpoints sit well outside them
-  and leave a visible gap. Each polyline is re-anchored at the box centres and clipped to
-  the borders, which puts the ends (and the arrowhead) back on the edge. The same applies to
-  sequence-diagram lifelines after the participant boxes are tightened.
-- **Connectors are plain two-point lines.** Mermaid's routed polyline carries midpoints even
-  on a dead-straight edge, which show up in OmniGraffle as stray handles. Each connector is
-  rebuilt as a single segment between the two box centres, clipped to their borders, so it
-  has exactly two points. Self-loops keep their route because they need one, and
-  `--keep-routing` restores Mermaid's polylines. Anything still routed is passed through
-  `--simplify-tol` (default 6) to drop collinear leftovers — including sequence-diagram
-  lifelines, where clipping otherwise leaves the old endpoints behind.
-
-### Canvas settings
-
-Every canvas is written flexible rather than fixed: `CanvasSizingMode = 1`
-(what OmniGraffle writes for `adjusts pages = true`), so it grows on every side as
-content moves, and `PageBreaks = 'NO'` so no page-break rules are drawn across the
-diagram. `HPages`/`VPages` are seeded at 1 and OmniGraffle recalculates them from the
-content.
-
-### Why sequence-diagram messages are not connected
-
-OmniGraffle **re-routes a connected line to its target's connection point as soon as the
-document loads**. Attaching messages to lifelines collapsed all 11 messages onto a single
-y (72.5), destroying the timeline. A message means "at this point in time", so position
-wins: lifelines are connected to their participant boxes, messages are left free.
-`--connect-messages` opts in, and will flatten the diagram.
+- **Sequence messages are deliberately not connected.** OmniGraffle re-routes a connected
+  line to its target's connection point on load, which collapsed all 11 messages onto
+  y=72.5 and destroyed the timeline. A message means "at this point in time", so position
+  wins. Lifelines *are* connected, to their top and bottom participant boxes.
 
 ---
 
 ## SVG-import mode
 
-### Step 1 — Get the Mermaid sources
-
-From a Markdown file:
-
 ```bash
-python3 $SKILL/scripts/extract_mermaid.py DOC.md OUTDIR/mmd
-```
+python3 $SKILL/scripts/extract_mermaid.py DOC.md out/mmd
+$SKILL/scripts/render_mermaid.sh out/svg out/mmd/*.mmd
+node    $SKILL/scripts/og_fix_svg.mjs out/svg/*.svg          # edits in place
 
-It writes `NN-<slug>.mmd` per ```` ```mermaid ```` block, naming each from the nearest
-preceding heading, and prints `name<TAB>title` lines. **Keep those titles** — reuse them
-as diagram titles in Step 4 and canvas names in Step 5.
-
-If the user already has `.mmd` files, skip this.
-
-### Step 2 — Render to SVG
-
-```bash
-$SKILL/scripts/render_mermaid.sh OUTDIR/svg OUTDIR/mmd/*.mmd
-```
-
-Provisions `@mermaid-js/mermaid-cli` into `~/.cache/omnigraffle-generator/toolchain` on
-first run (one time, ~20 s), renders with `htmlLabels:false`, and patches Mermaid's
-edge-label wrapping bug.
-
-### Step 3 — Make the SVGs OmniGraffle-safe
-
-```bash
-node $SKILL/scripts/og_fix_svg.mjs OUTDIR/svg/*.svg     # edits in place
-```
-
-This is the core of the skill. It reports what it changed per file.
-
-**Verify before continuing** — this catches the failures that are invisible in a browser:
-
-```bash
-for f in OUTDIR/svg/*.svg; do
-  n=$(basename "$f" .svg)
-  python3 $SKILL/scripts/verify_svg.py "$f" "OUTDIR/mmd/$n.mmd"
+for f in out/svg/*.svg; do                                    # never skip
+  python3 $SKILL/scripts/verify_svg.py "$f" "out/mmd/$(basename "$f" .svg).mmd"
 done
+
+python3 $SKILL/scripts/combine_svgs.py -o out/all.svg "out/svg/01-a.svg=First"
+$SKILL/scripts/make_multicanvas.sh out/diagrams.graffle "out/svg/01-a.svg=01 · A"
 ```
 
-Every file must print `OK`. `missing=N` means label text was lost or split mid-word — stop
-and investigate rather than shipping it.
+The fixed SVGs stay valid for browsers and GitHub, so they remain usable inline in docs.
+`combine_svgs.py` must report `dup_ids=0, unresolved_refs=0, leftover_transforms=0`.
 
-At this point the individual SVGs are usable: they open correctly in OmniGraffle **and**
-still render normally in a browser / on GitHub.
+---
 
-### Step 4 — (optional) One combined SVG
+## Verification — this is the part people skip
 
-For a single flat file containing every diagram stacked vertically with titles:
-
-```bash
-python3 $SKILL/scripts/combine_svgs.py -o OUTDIR/all-diagrams.svg \
-  "OUTDIR/svg/01-foo.svg=1. First diagram" \
-  "OUTDIR/svg/02-bar.svg=2. Second diagram"
-```
-
-Must report `dup_ids=0, unresolved_refs=0, leftover_transforms=0`.
-
-### Step 5 — (optional) Multi-canvas .graffle
-
-For one native OmniGraffle document with **one diagram per canvas** — usually what people
-actually want:
+A browser screenshot proves **nothing** about OmniGraffle, and structural checks on a file
+do not prove OmniGraffle parsed it.
 
 ```bash
-$SKILL/scripts/make_multicanvas.sh OUTDIR/diagrams.graffle \
-  "OUTDIR/svg/01-foo.svg=01 · First diagram" \
-  "OUTDIR/svg/02-bar.svg=02 · Second diagram"
-```
-
-Requires OmniGraffle installed; it drives the app via AppleScript (there is no headless
-mode) and will focus it repeatedly. Each canvas is auto-sized to its own diagram.
-
-### Step 6 — Verify in OmniGraffle
-
-Structural checks do not prove OmniGraffle parsed the file. Read the text back out:
-
-```bash
+python3 $SKILL/scripts/verify_graffle.py FILE.graffle [MMD_DIR]   # native, no app needed
+python3 $SKILL/scripts/verify_svg.py FILE.svg [FILE.mmd]          # SVG path
 osascript $SKILL/scripts/dump_graffle_text.applescript FILE.graffle
 ```
 
-Compare against the `.mmd` label fragments. Text present per canvas, with nothing bleeding
-between canvases, is the only real pass condition.
+`verify_graffle.py` checks nested groups, connector midpoints, endpoints off their box
+border, labels blanketing a line, overlapping shapes, canvas flexibility and page breaks —
+and, given the `.mmd` directory, that every label fragment survived. Every one of those
+checks exists because that defect shipped at least once.
 
----
+**Rules**
 
-## Why each step exists
-
-Each row is a real OmniGraffle behaviour, confirmed by reading geometry and text back out
-of OmniGraffle via AppleScript. **All of these render correctly in a browser**, which is
-why they are so easy to ship broken.
-
-| OmniGraffle behaviour | Symptom if unhandled | Handled by |
-|---|---|---|
-| Ignores `<foreignObject>` | Every flowchart shape imports **blank**. Mermaid puts flowchart labels in embedded XHTML by default | `render_mermaid.sh` (`htmlLabels:false`) |
-| Merges sibling `<tspan>`s into one left-aligned paragraph, ignoring per-tspan `x` / `text-anchor` | Multi-line labels collapse and stop being centred in their shape | `og_fix_svg.mjs` — one `<text>` per row |
-| Cannot parse `rgba()` (not valid SVG 1.1 paint); falls back to **black** | Black boxes behind edge labels | `og_fix_svg.mjs` — `rgb()` + `*-opacity` |
-| Ignores the `<style>` block | Shapes lose all fill/stroke/font | `og_fix_svg.mjs` — inline computed styles |
-| Renders `<marker>` **defs** as real objects, and does **not** apply them to paths | Arrowheads lost *and* a pile of junk shapes dumped at the origin | `og_fix_svg.mjs` — real `<polygon>` arrowheads, markers deleted |
-| Draws zero-area rects as visible filled boxes | Stray boxes; Mermaid emits empty placeholder rects | `og_fix_svg.mjs` |
-| Ignores **ancestor transforms** for some elements | Parts of a diagram scattered at raw coordinates when diagrams are offset for stacking | `combine_svgs.py` — bakes all transforms into coordinates |
-| Mangles `<line>` | Lifelines collapse to 1×1 objects | `og_fix_svg.mjs` — `<line>` → `<path>` |
-| Mermaid's `insertEdgeLabel()` passes `width: undefined`, so edge labels ignore `flowchart.wrappingWidth` and use a hardcoded 200px | Long identifiers hard-split **mid-word** (`requeueRequestsPCollectio` / `n`) | `render_mermaid.sh` patch |
-
-### Automation limits (do not waste time here)
-
-- **Clipboard copy/paste is ignored.** Scripted `⌘C`/`⌘V` between documents silently pastes nothing.
-- **`duplicate` fails across documents** — `Can't make ... into type reference`.
-- **`export` via AppleScript is unreliable** — `-10000` / `-1701` even with explicit settings.
-- **`move` works within a single document**, but is fragile in bulk.
-
-Multi-canvas assembly therefore happens **at the file level, not the GUI level**: a
-`.graffle` is a ZIP whose `data.plist` holds a `Sheets` array, one entry per canvas.
-`merge_graffle.py` merges sheets and offsets graphic `ID`s per sheet (they restart near 0
-in every file, and `Head`/`Tail` connection references also carry `ID`).
-
----
-
-## Rules
-
-1. **Never skip `verify_svg.py`.** Every bug this skill exists for is invisible in a browser.
-2. **Never claim OmniGraffle renders correctly from a browser screenshot.** Read the text
-   back out of OmniGraffle, or say you did not verify it.
-3. **Preserve the individual SVGs.** They stay valid for browsers/GitHub; the combined SVG
-   and `.graffle` are additional artifacts, not replacements.
-4. **Do not hand-edit generated SVGs.** Re-run the pipeline; the scripts are idempotent.
-5. **Warn before Step 5** that OmniGraffle will be focused repeatedly and open documents
-   will be closed (`close every document saving no`).
+1. **Never claim it renders correctly without reading it back** — via `verify_graffle.py`
+   or `dump_graffle_text.applescript`. Otherwise say you did not verify it.
+2. **Never skip `verify_svg.py`** on the SVG path; those failures are invisible in a browser.
+3. **Zoomed out, OmniGraffle draws text at a minimum legible size**, so tight boxes *look*
+   like the text overflows. Check at ≥60% zoom before believing it.
+4. **Don't hand-edit generated files** — re-run; the scripts are deterministic.
+5. **Warn before any step that drives the app**: it takes focus and closes open documents
+   (`close every document saving no`).
+6. **Write to a new file** when regenerating something the user may have edited by hand.
 
 ## Requirements
 
-- `node` + `npm` (toolchain is provisioned automatically on first run)
-- `python3` (stdlib only)
-- OmniGraffle + macOS `osascript` — Steps 5 and 6 only
+- `node` + `npm` — the Mermaid toolchain is provisioned automatically on first run
+- `python3` — stdlib only
+- macOS + OmniGraffle — only for SVG-import mode and `dump_graffle_text.applescript`;
+  native generation and `verify_graffle.py` need neither

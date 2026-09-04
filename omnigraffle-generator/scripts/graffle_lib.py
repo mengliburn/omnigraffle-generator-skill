@@ -109,9 +109,10 @@ def write_graffle(path, graphics, title, canvas_w, canvas_h):
     sheet['SheetTitle'] = title
     sheet['CanvasSize'] = f'{{{canvas_w:.2f}, {canvas_h:.2f}}}'
     # Flexible canvas that grows on every side, rather than a fixed sheet.
-    # CanvasSizingMode 1 is what OmniGraffle writes for "adjusts pages" = true.
+    # CanvasSizingMode 1 selects "Flexible"; AutoAdjust is a per-side bitmask
+    # (top/left/bottom/right), so 15 turns all four sides on. 1 would be top only.
     sheet['CanvasSizingMode'] = 1
-    sheet['AutoAdjust'] = 1
+    sheet['AutoAdjust'] = 15
     sheet['PrintOnePage'] = False
     sheet['HPages'] = 1
     sheet['VPages'] = 1

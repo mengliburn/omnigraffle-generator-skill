@@ -65,8 +65,8 @@ def main():
         s = offset_ids(src[0], i * a.id_stride)
         s['SheetTitle'] = title
         s['UniqueID'] = i + 1
-        s['CanvasSizingMode'] = 1      # flexible canvas, not a fixed sheet
-        s['AutoAdjust'] = 1
+        s['CanvasSizingMode'] = 1      # "Flexible" rather than a fixed sheet
+        s['AutoAdjust'] = 15           # per-side bitmask: all four sides on
         s['HPages'] = 1
         s['VPages'] = 1
         sheets.append(s)
