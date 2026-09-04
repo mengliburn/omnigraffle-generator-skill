@@ -25,7 +25,7 @@ import json
 import pathlib
 import sys
 
-from graffle_lib import colour, line, shape, simplify_points, write_graffle
+from graffle_lib import clip_to_boxes, colour, line, shape, write_graffle
 
 ACTOR_FILL = colour(0.918, 0.918, 0.918)     # #eaeaea
 ACTOR_STROKE = colour(0.4, 0.4, 0.4)         # #666
@@ -56,6 +56,7 @@ def main():
     gid = 2
     boxes, lifelines, messages, notes, acts, labels, seqs = [], [], [], [], [], [], []
     top_id, bottom_id, lifeline_id = {}, {}, {}
+    top_rect, bottom_rect = {}, {}
 
     for act in L['actors']:
         # tighten to the caption, keeping the centre so lifelines stay aligned
@@ -67,11 +68,20 @@ def main():
         g = shape(gid, cx - w / 2 + ox, cy - h / 2 + oy, w, h,
                   text=act['label'], fill=ACTOR_FILL, stroke=ACTOR_STROKE)
         boxes.append(g)
-        (top_id if act['which'] == 'top' else bottom_id)[act['name']] = gid
+        if act['which'] == 'top':
+            top_id[act['name']] = gid
+            top_rect[act['name']] = (cx - w / 2, cy - h / 2, w, h)
+        else:
+            bottom_id[act['name']] = gid
+            bottom_rect[act['name']] = (cx - w / 2, cy - h / 2, w, h)
         gid += 1
 
     for lf in L['lifelines']:
-        g = line(gid, [(lf['x1'] + ox, lf['y1'] + oy), (lf['x2'] + ox, lf['y2'] + oy)],
+        # the participant boxes were tightened, so the lifeline must be re-clipped
+        # to their new borders or it starts short of them
+        seg = clip_to_boxes([(lf['x1'], lf['y1']), (lf['x2'], lf['y2'])],
+                            top_rect.get(lf['id']), bottom_rect.get(lf['id']))
+        g = line(gid, [(x + ox, y + oy) for x, y in seg],
                  stroke=LIFELINE_COLOUR, width=0.75, arrow=False,
                  tail_id=top_id.get(lf['id']), head_id=bottom_id.get(lf['id']))
         lifelines.append(g)

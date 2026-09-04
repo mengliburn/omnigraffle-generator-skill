@@ -90,6 +90,11 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
   `--pad-x`/`--pad-y` (default 0) add breathing room if wanted. Only plain rectangles are
   tightened — cylinders, stadiums and subroutines keep Mermaid's height, since their caps
   need the room. Centres are preserved, so connected edges simply re-route.
+- **Connectors are clipped to the tightened shapes.** Mermaid routes edges against its own
+  padded containers, so once the shapes shrink the original endpoints sit well outside them
+  and leave a visible gap. Each polyline is re-anchored at the box centres and clipped to
+  the borders, which puts the ends (and the arrowhead) back on the edge. The same applies to
+  sequence-diagram lifelines after the participant boxes are tightened.
 - **Straight connectors get no redundant midpoint.** Mermaid's routed polyline always
   carries a midpoint even on a dead-straight edge, which shows up in OmniGraffle as a
   stray handle. Interior points within `--simplify-tol` (default 6) of the straight chord

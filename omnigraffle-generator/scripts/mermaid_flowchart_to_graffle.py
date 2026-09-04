@@ -26,7 +26,7 @@ import re
 import sys
 import zipfile
 
-from graffle_lib import colour, rtf, simplify_points
+from graffle_lib import clip_to_boxes, colour, rtf, simplify_points
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
@@ -147,6 +147,7 @@ def main():
     ox, oy = PAD - minx, PAD - miny
     gid = 2
     node_gfx, line_gfx, label_gfx, cluster_gfx = [], [], [], []
+    rects = {}
     idmap = {}
 
     for key, n in nodes.items():
@@ -161,6 +162,7 @@ def main():
             w = min(w, n['textW'] + a.pad_x)
             h = min(h, n['textH'] + a.pad_y)
         cx, cy = n['x'] + n['w'] / 2, n['y'] + n['h'] / 2
+        rects[key] = (cx - w / 2, cy - h / 2, w, h)
         node_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid,
             'Shape': shape_name,
@@ -195,8 +197,9 @@ def main():
 
     connected = 0
     for e in edges:
+        routed = clip_to_boxes(e['points'], rects.get(e['src']), rects.get(e['tgt']))
         pts = [f'{{{x + ox:.2f}, {y + oy:.2f}}}'
-               for x, y in simplify_points(e['points'], a.simplify_tol)]
+               for x, y in simplify_points(routed, a.simplify_tol)]
         if len(pts) < 2:
             continue
         stroke = {'Color': colour(0.2, 0.2, 0.2), 'Width': 1.0,

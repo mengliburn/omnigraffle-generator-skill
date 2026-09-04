@@ -138,3 +138,61 @@ def simplify_points(pts, tol=2.0):
             out.append(cur)
     out.append(pts[-1])
     return out
+
+
+def _inside(p, r, eps=0.01):
+    x, y, w, h = r
+    return (x - eps) <= p[0] <= (x + w + eps) and (y - eps) <= p[1] <= (y + h + eps)
+
+
+def _seg_rect_hit(a, b, r):
+    """First intersection of segment a->b with rect r, or None (Liang-Barsky)."""
+    x, y, w, h = r
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, a[0] - x), (dx, x + w - a[0]), (-dy, a[1] - y), (dy, y + h - a[1])):
+        if p == 0:
+            if q < 0:
+                return None
+            continue
+        t = q / p
+        if p < 0:
+            if t > t1:
+                return None
+            t0 = max(t0, t)
+        else:
+            if t < t0:
+                return None
+            t1 = min(t1, t)
+    t = t1 if _inside(a, r) else t0
+    if not (0.0 <= t <= 1.0):
+        return None
+    return (a[0] + dx * t, a[1] + dy * t)
+
+
+def clip_to_boxes(points, src_rect, tgt_rect):
+    """Trim/extend a routed polyline so it starts and ends exactly on the box edges.
+
+    Mermaid routes edges against its own generously padded containers. Once the
+    shapes are tightened to their text the original endpoints sit well outside
+    them, leaving a visible gap. Anchoring the path at the box centres and then
+    clipping to each rect puts the ends back on the borders.
+    """
+    pts = [tuple(p) for p in points]
+    if src_rect:
+        c = (src_rect[0] + src_rect[2] / 2, src_rect[1] + src_rect[3] / 2)
+        while len(pts) > 1 and _inside(pts[0], src_rect):
+            pts.pop(0)
+        pts.insert(0, c)
+        hit = _seg_rect_hit(pts[0], pts[1], src_rect) if len(pts) > 1 else None
+        if hit:
+            pts[0] = hit
+    if tgt_rect:
+        c = (tgt_rect[0] + tgt_rect[2] / 2, tgt_rect[1] + tgt_rect[3] / 2)
+        while len(pts) > 1 and _inside(pts[-1], tgt_rect):
+            pts.pop()
+        pts.append(c)
+        hit = _seg_rect_hit(pts[-1], pts[-2], tgt_rect) if len(pts) > 1 else None
+        if hit:
+            pts[-1] = hit
+    return pts
