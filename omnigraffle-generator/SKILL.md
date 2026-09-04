@@ -25,7 +25,70 @@ failures.
 
 ---
 
-## Workflow
+## Two modes — pick one
+
+| | **Native** (preferred) | **SVG import** |
+|---|---|---|
+| Output | OmniGraffle's own objects, written straight into `data.plist` | SVG, imported by OmniGraffle |
+| Grouping | none — flat objects | deeply nested groups (6 levels, 40+ groups) |
+| Arrows | line + arrowhead are **one** object | line and arrowhead are two objects |
+| Connections | real `Head`/`Tail` — lines re-route when a box moves | none; lines merely end near a box |
+| Diagram support | flowcharts + sequence diagrams | anything Mermaid renders |
+
+Use **native** for flowcharts and sequence diagrams. Fall back to **SVG import** for
+diagram types with no native mapping (class, state, ER, gantt, pie), or when you want an
+SVG for a browser or GitHub as well.
+
+---
+
+## Native mode
+
+```bash
+python3 $SKILL/scripts/extract_mermaid.py DOC.md out/mmd      # optional
+$SKILL/scripts/render_mermaid.sh out/raw out/mmd/*.mmd        # do NOT run og_fix_svg
+
+# flowchart
+node $SKILL/scripts/extract_flowchart_layout.mjs out/raw/x.svg > x.json
+python3 $SKILL/scripts/mermaid_flowchart_to_graffle.py x.json x.graffle --title "Title"
+
+# sequence diagram
+node $SKILL/scripts/extract_sequence_layout.mjs out/raw/y.svg > y.json
+python3 $SKILL/scripts/mermaid_sequence_to_graffle.py y.json y.graffle --title "Title"
+
+# one document, one diagram per canvas
+python3 $SKILL/scripts/merge_graffle.py -o all.graffle "x.graffle=01 · X" "y.graffle=02 · Y"
+```
+
+Pick the extractor by inspecting the SVG: `grep -q messageLine` means sequence diagram.
+
+**Native mode reads Mermaid's semantic markup, so it must run on the raw render — before
+`og_fix_svg.mjs`, which deliberately destroys that markup.**
+
+### Facts the emitters depend on
+
+All established by drawing the equivalent objects in OmniGraffle and reading the plist back:
+
+- `GraphicsList` is **front-to-back** — the first entry draws on top. Emit labels first,
+  lines last, or connectors paint over the labels that are supposed to mask them.
+- A `LineGraphic` **without `LogicalPath` is silently discarded** on load.
+- Shape text is **RTF**, and RTF is cp1252 — non-ASCII must use `\uN?` escapes or `—`
+  arrives as `â€"`.
+- Connections are `Head`/`Tail` `{"ID": n}`, and the target may be a `ShapedGraphic` **or
+  another `LineGraphic`**.
+- Nested subgraphs must be emitted smallest-first, or the outer container paints over the
+  inner one.
+
+### Why sequence-diagram messages are not connected
+
+OmniGraffle **re-routes a connected line to its target's connection point as soon as the
+document loads**. Attaching messages to lifelines collapsed all 11 messages onto a single
+y (72.5), destroying the timeline. A message means "at this point in time", so position
+wins: lifelines are connected to their participant boxes, messages are left free.
+`--connect-messages` opts in, and will flatten the diagram.
+
+---
+
+## SVG-import mode
 
 ### Step 1 — Get the Mermaid sources
 

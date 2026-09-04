@@ -71,6 +71,17 @@ const layout = await page.evaluate(() => {
                  label: textOf(label || g), shape: shape.tagName.toLowerCase() });
   }
 
+  // subgraph containers
+  const clusters = [];
+  for (const g of root.querySelectorAll('g.cluster')) {
+    const box = g.querySelector(':scope > rect, :scope > path, :scope > polygon');
+    if (!box) continue;
+    const b = abs(box);
+    const lbl = g.querySelector(':scope > g.cluster-label');
+    clusters.push({ key: (g.id || '').replace(/^.*?-/, ''), x: b.x, y: b.y, w: b.w, h: b.h,
+                    label: lbl ? textOf(lbl) : '' });
+  }
+
   const edges = [];
   for (const p of root.querySelectorAll('path.flowchart-link')) {
     const did = p.getAttribute('data-id');
@@ -101,7 +112,7 @@ const layout = await page.evaluate(() => {
     edgeLabels.push({ x: b.x, y: b.y, w: b.w, h: b.h, label: txt });
   }
 
-  return { viewBox: vb, nodes, edges, edgeLabels };
+  return { viewBox: vb, nodes, clusters, edges, edgeLabels };
 });
 
 await browser.close();

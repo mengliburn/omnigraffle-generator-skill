@@ -26,20 +26,11 @@ import re
 import sys
 import zipfile
 
+from graffle_lib import colour, rtf
+
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
           'circle': 'Circle', 'ellipse': 'Circle'}
-
-
-def rtf(text):
-    lines = text.split('\n')
-    body = '\\\n'.join(l.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
-                       for l in lines)
-    return (r'{\rtf1\ansi\ansicpg1252\cocoartf2870'
-            '\n' r'{\fonttbl\f0\fswiss\fcharset0 Helvetica;}'
-            '\n' r'{\colortbl;\red255\green255\blue255;}'
-            '\n' r'\pard\qc\partightenfactor0' '\n\n'
-            r'\f0\fs24 \cf0 ' + body + '}')
 
 
 def strip_tags(frag):
@@ -121,10 +112,6 @@ def parse_edge_labels(svg):
     return out
 
 
-def colour(r, g, b):
-    return {'r': f'{r:.5f}', 'g': f'{g:.5f}', 'b': f'{b:.5f}'}
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('layout', help='layout.json from extract_flowchart_layout.mjs')
@@ -150,7 +137,7 @@ def main():
     PAD = 30.0
     ox, oy = PAD - minx, PAD - miny
     gid = 2
-    node_gfx, line_gfx, label_gfx = [], [], []
+    node_gfx, line_gfx, label_gfx, cluster_gfx = [], [], [], []
     idmap = {}
 
     for key, n in nodes.items():
@@ -166,6 +153,22 @@ def main():
             },
             'Text': {'Text': rtf(n['label']), 'TextAlongPathGlyphAnchor': 'center'},
             'FitText': 'YES',
+        })
+        gid += 1
+
+    # Subgraph containers sit at the very back. Sort smallest-first so a nested
+    # subgraph stays in front of the one enclosing it (GraphicsList is front-to-back);
+    # otherwise the outer container paints over the inner one.
+    for c in sorted(layout.get('clusters', []), key=lambda c: c['w'] * c['h']):
+        cluster_gfx.append({
+            'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
+            'Bounds': f'{{{{{c["x"] + ox:.2f}, {c["y"] + oy:.2f}}}, {{{c["w"]:.2f}, {c["h"]:.2f}}}}}',
+            'Style': {'fill': {'Color': colour(0.98, 0.98, 0.90)},
+                      'stroke': {'Color': colour(0.66, 0.66, 0.66), 'Width': 1.0, 'Pattern': 2},
+                      'shadow': {'Draws': 'NO'}},
+            'Text': {'Text': rtf(c.get('label', '')), 'TextAlongPathGlyphAnchor': 'center',
+                     'VerticalPad': 4},
+            'TextPlacement': 0,
         })
         gid += 1
 
@@ -205,7 +208,7 @@ def main():
         gid += 1
 
     # GraphicsList is FRONT-to-back: labels must precede lines to mask them
-    graphics = label_gfx + node_gfx + line_gfx
+    graphics = label_gfx + node_gfx + line_gfx + cluster_gfx
 
     doc = plistlib.loads(TEMPLATE.read_bytes())
     sheet = doc['Sheets'][0]
@@ -217,7 +220,7 @@ def main():
     with zipfile.ZipFile(a.out, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('data.plist', plistlib.dumps(doc, fmt=plistlib.FMT_BINARY))
 
-    print(f'{a.out}: {len(nodes)} nodes, {len(edges)} edges '
+    print(f'{a.out}: {len(nodes)} nodes, {len(cluster_gfx)} subgraphs, {len(edges)} edges '
           f'({connected} connected), {len(elabels)} edge labels, 0 groups')
     unresolved = [e for e in edges if e['src'] not in idmap or e['tgt'] not in idmap]
     if unresolved:

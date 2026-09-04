@@ -56,8 +56,26 @@ The fixed SVGs stay valid for browsers and GitHub, so they remain usable inline 
 
 ## Scripts
 
+### Native mode (preferred)
+
+Emits OmniGraffle's own object model instead of importing SVG, which removes the
+importer's limitations entirely: **no groups**, line and arrowhead are **one object**, and
+connectors are **really connected** so they re-route when a box is moved.
+
+```bash
+$S/render_mermaid.sh out/raw out/mmd/*.mmd            # raw render, no og_fix
+node $S/extract_flowchart_layout.mjs out/raw/x.svg > x.json
+python3 $S/mermaid_flowchart_to_graffle.py x.json x.graffle --title "01 · X"
+python3 $S/merge_graffle.py -o all.graffle "x.graffle=01 · X" "y.graffle=02 · Y"
+```
+
+Sequence diagrams use `extract_sequence_layout.mjs` + `mermaid_sequence_to_graffle.py`.
+
 | Script | Purpose |
 |---|---|
+| `extract_flowchart_layout.mjs` / `mermaid_flowchart_to_graffle.py` | **Native** flowchart → `.graffle` (nodes, subgraphs, connected edges) |
+| `extract_sequence_layout.mjs` / `mermaid_sequence_to_graffle.py` | **Native** sequence diagram → `.graffle` (participants, lifelines, messages, notes) |
+| `graffle_lib.py` | Shared plist emitters (RTF text, colours, shapes, connected lines) |
 | `extract_mermaid.py` | Pull ```` ```mermaid ```` blocks out of Markdown, naming each from its nearest heading |
 | `render_mermaid.sh` | Render `.mmd` → SVG with OmniGraffle-safe Mermaid settings; provisions the toolchain; patches Mermaid's edge-label wrapping bug |
 | `og_fix_svg.mjs` | **The core.** Rewrites an SVG so OmniGraffle imports it faithfully |
