@@ -78,6 +78,19 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
 - Nested subgraphs must be emitted smallest-first, or the outer container paints over the
   inner one.
 
+### Sizing and line simplification
+
+- **Boxes are sized to their text, not to Mermaid's container.** Mermaid pads generously;
+  the emitters measure the rendered label and add `--pad-x`/`--pad-y` (default 12/8 for
+  flowchart nodes, 16/10 for participants). Only plain rectangles are tightened — cylinders,
+  stadiums and subroutines keep Mermaid's height, since their caps need the room. The
+  original centre is preserved, so the layout stays coherent and connected edges re-route
+  themselves.
+- **Straight connectors get no redundant midpoint.** Mermaid's routed polyline always
+  carries a midpoint even on a dead-straight edge, which shows up in OmniGraffle as a
+  stray handle. Interior points within `--simplify-tol` (default 6) of the straight chord
+  are dropped; genuine bends and self-loops are kept.
+
 ### Why sequence-diagram messages are not connected
 
 OmniGraffle **re-routes a connected line to its target's connection point as soon as the

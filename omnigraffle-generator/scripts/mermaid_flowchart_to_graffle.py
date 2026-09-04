@@ -26,7 +26,7 @@ import re
 import sys
 import zipfile
 
-from graffle_lib import colour, rtf
+from graffle_lib import colour, rtf, simplify_points
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
@@ -117,6 +117,13 @@ def main():
     ap.add_argument('layout', help='layout.json from extract_flowchart_layout.mjs')
     ap.add_argument('out')
     ap.add_argument('--title', default=None)
+    ap.add_argument('--pad-x', type=float, default=12.0,
+                    help='horizontal padding around node text (default 12)')
+    ap.add_argument('--pad-y', type=float, default=8.0,
+                    help='vertical padding around node text (default 8)')
+    ap.add_argument('--simplify-tol', type=float, default=6.0,
+                    help='drop interior line points within this distance of the '
+                         'straight chord (default 6; larger straightens more)')
     a = ap.parse_args()
 
     layout = json.loads(pathlib.Path(a.layout).read_text())
@@ -142,10 +149,20 @@ def main():
 
     for key, n in nodes.items():
         idmap[key] = gid
+        shape_name = SHAPES.get(n.get('shape'), 'Rectangle')
+        w, h = n['w'], n['h']
+        # Mermaid pads its containers generously. Shrink plain rectangles to their
+        # measured text; leave cylinders/stadiums alone, since their caps need the
+        # extra height. Keep the original centre so the layout stays coherent and
+        # the connected edges simply re-route.
+        if n.get('shape') == 'rect' and n.get('textW'):
+            w = min(w, n['textW'] + a.pad_x)
+            h = min(h, n['textH'] + a.pad_y)
+        cx, cy = n['x'] + n['w'] / 2, n['y'] + n['h'] / 2
         node_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid,
-            'Shape': SHAPES.get(n.get('shape'), 'Rectangle'),
-            'Bounds': f'{{{{{n["x"] + ox:.2f}, {n["y"] + oy:.2f}}}, {{{n["w"]:.2f}, {n["h"]:.2f}}}}}',
+            'Shape': shape_name,
+            'Bounds': f'{{{{{cx - w / 2 + ox:.2f}, {cy - h / 2 + oy:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
             'Style': {
                 'fill': {'Color': colour(0.925, 0.925, 1.0)},
                 'stroke': {'Color': colour(0.576, 0.439, 0.859), 'Width': 1.0},
@@ -174,7 +191,8 @@ def main():
 
     connected = 0
     for e in edges:
-        pts = [f'{{{x + ox:.2f}, {y + oy:.2f}}}' for x, y in e['points']]
+        pts = [f'{{{x + ox:.2f}, {y + oy:.2f}}}'
+               for x, y in simplify_points(e['points'], a.simplify_tol)]
         if len(pts) < 2:
             continue
         stroke = {'Color': colour(0.2, 0.2, 0.2), 'Width': 1.0,
@@ -196,7 +214,9 @@ def main():
         gid += 1
 
     for lb in elabels:
-        w, h = max(lb['w'], 20.0) + 10, max(lb['h'], 14.0) + 6
+        tw = lb.get('textW') or lb['w']
+        th = lb.get('textH') or lb['h']
+        w, h = max(tw, 20.0) + 10, max(th, 14.0) + 6
         label_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
             'Bounds': f'{{{{{lb["x"] + ox - w / 2:.2f}, {lb["y"] + oy - h / 2:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',

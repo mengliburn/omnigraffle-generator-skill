@@ -108,3 +108,30 @@ def write_graffle(path, graphics, title, canvas_w, canvas_h):
     doc['Sheets'] = [sheet]
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('data.plist', plistlib.dumps(doc, fmt=plistlib.FMT_BINARY))
+
+
+def simplify_points(pts, tol=2.0):
+    """Drop interior points that lie (near enough) on the line between their
+    neighbours, so a straight connector is two points rather than three.
+
+    Mermaid's routed polyline always carries a midpoint even for a dead-straight
+    edge, which shows up in OmniGraffle as a redundant handle. Genuine bends —
+    self-loops, dog-legs — exceed the tolerance and are kept.
+    """
+    if len(pts) <= 2:
+        return list(pts)
+    out = [pts[0]]
+    for prev, cur, nxt in zip(pts, pts[1:], pts[2:]):
+        ax, ay = prev
+        bx, by = nxt
+        px, py = cur
+        dx, dy = bx - ax, by - ay
+        seg = (dx * dx + dy * dy) ** 0.5
+        if seg == 0:
+            dist = ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+        else:
+            dist = abs(dy * px - dx * py + bx * ay - by * ax) / seg
+        if dist > tol:
+            out.append(cur)
+    out.append(pts[-1])
+    return out

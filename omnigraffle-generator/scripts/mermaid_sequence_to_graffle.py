@@ -25,7 +25,7 @@ import json
 import pathlib
 import sys
 
-from graffle_lib import colour, line, shape, write_graffle
+from graffle_lib import colour, line, shape, simplify_points, write_graffle
 
 ACTOR_FILL = colour(0.918, 0.918, 0.918)     # #eaeaea
 ACTOR_STROKE = colour(0.4, 0.4, 0.4)         # #666
@@ -39,6 +39,10 @@ def main():
     ap.add_argument('layout')
     ap.add_argument('out')
     ap.add_argument('--title', default=None)
+    ap.add_argument('--pad-x', type=float, default=16.0,
+                    help='horizontal padding around participant text (default 16)')
+    ap.add_argument('--pad-y', type=float, default=10.0,
+                    help='vertical padding around participant text (default 10)')
     ap.add_argument('--connect-messages', action='store_true',
                     help='attach messages to lifelines (WARNING: OmniGraffle '
                          're-routes them and flattens the timeline)')
@@ -54,7 +58,13 @@ def main():
     top_id, bottom_id, lifeline_id = {}, {}, {}
 
     for act in L['actors']:
-        g = shape(gid, act['x'] + ox, act['y'] + oy, act['w'], act['h'],
+        # tighten to the caption, keeping the centre so lifelines stay aligned
+        w, h = act['w'], act['h']
+        if act.get('textW'):
+            w = min(w, act['textW'] + a.pad_x)
+            h = min(h, act['textH'] + a.pad_y)
+        cx, cy = act['x'] + act['w'] / 2, act['y'] + act['h'] / 2
+        g = shape(gid, cx - w / 2 + ox, cy - h / 2 + oy, w, h,
                   text=act['label'], fill=ACTOR_FILL, stroke=ACTOR_STROKE)
         boxes.append(g)
         (top_id if act['which'] == 'top' else bottom_id)[act['name']] = gid

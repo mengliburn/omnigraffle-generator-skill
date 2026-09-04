@@ -60,7 +60,7 @@ const layout = await page.evaluate(() => {
     actors.push({
       name: r.getAttribute('name'),
       which: (r.getAttribute('class') || '').includes('actor-bottom') ? 'bottom' : 'top',
-      x: b.x, y: b.y, w: b.w, h: b.h, label: '',
+      x: b.x, y: b.y, w: b.w, h: b.h, label: '', textW: 0, textH: 0,
     });
   }
   // actor captions are separate <text class="actor">; attach by containment
@@ -71,7 +71,12 @@ const layout = await page.evaluate(() => {
     for (const a of actors) {
       if (c.cx >= a.x && c.cx <= a.x + a.w && c.cy >= a.y && c.cy <= a.y + a.h) best = a;
     }
-    if (best) best.label = best.label ? best.label + '\n' + rows.join('\n') : rows.join('\n');
+    if (best) {
+      best.label = best.label ? best.label + '\n' + rows.join('\n') : rows.join('\n');
+      const tb = abs(t);
+      best.textW = Math.max(best.textW, tb.w);
+      best.textH += tb.h;
+    }
   }
 
   const lifelines = [];

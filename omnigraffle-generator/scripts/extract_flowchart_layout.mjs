@@ -67,7 +67,15 @@ const layout = await page.evaluate(() => {
     const b = abs(shape);
     const label = g.querySelector(':scope > g.label');
     let key = (g.id || '').replace(/^.*?flowchart-/, '').replace(/-\d+$/, '');
-    nodes.push({ key, x: b.x, y: b.y, w: b.w, h: b.h,
+    // measure the rendered label so the shape can be sized to its text rather
+    // than to Mermaid's generously padded container
+    let tw = 0, th = 0;
+    for (const t of (label || g).querySelectorAll('text')) {
+      const tb = abs(t);
+      tw = Math.max(tw, tb.w);
+      th += tb.h;
+    }
+    nodes.push({ key, x: b.x, y: b.y, w: b.w, h: b.h, textW: tw, textH: th,
                  label: textOf(label || g), shape: shape.tagName.toLowerCase() });
   }
 
@@ -109,7 +117,13 @@ const layout = await page.evaluate(() => {
     const txt = textOf(g);
     if (!txt) continue;
     const b = abs(g);
-    edgeLabels.push({ x: b.x, y: b.y, w: b.w, h: b.h, label: txt });
+    let tw = 0, th = 0;
+    for (const t of g.querySelectorAll('text')) {
+      const tb = abs(t);
+      tw = Math.max(tw, tb.w);
+      th += tb.h;
+    }
+    edgeLabels.push({ x: b.x, y: b.y, w: b.w, h: b.h, textW: tw, textH: th, label: txt });
   }
 
   return { viewBox: vb, nodes, clusters, edges, edgeLabels };
