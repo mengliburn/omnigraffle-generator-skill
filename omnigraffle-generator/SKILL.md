@@ -90,22 +90,26 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
   `--pad-x`/`--pad-y` (default 0) add breathing room if wanted. Only plain rectangles are
   tightened — cylinders, stadiums and subroutines keep Mermaid's height, since their caps
   need the room. Centres are preserved, so connected edges simply re-route.
-- **The layout is compacted after the shapes shrink.** Mermaid positions nodes for its own
-  padded boxes, so tightening the shapes leaves the connectors far longer than they need to
-  be. Node *centres* (never sizes) are scaled uniformly about the origin, which preserves
-  the arrangement exactly. The scale is the tightest that still gives every connector a
-  clear run of `--edge-gap` (default 16) beyond its own label, and keeps every pair of boxes
-  apart on at least one axis. A diagram whose labels are already wider than the space
-  available stays at scale 1.0 rather than let a label swallow its line.
+- **The layout is compacted rank by rank after the shapes shrink.** Mermaid positions nodes
+  for its own padded boxes, so tightening the shapes leaves every connector far longer than
+  it needs to be. A single uniform scale does not work: it is dominated by the worst edge in
+  the diagram, so one wide label keeps every other connector long. Dagre lays nodes out in
+  ranks along one axis, so each gap between consecutive ranks is closed independently, down
+  to `--edge-gap` (default 16) plus the widest label crossing *that* gap. Neighbours within
+  a rank are closed up to `--node-gap` as well, otherwise diagonal edges stay long. Order
+  and cross-axis alignment are preserved.
 - **Connectors are clipped to the tightened shapes.** Mermaid routes edges against its own
   padded containers, so once the shapes shrink the original endpoints sit well outside them
   and leave a visible gap. Each polyline is re-anchored at the box centres and clipped to
   the borders, which puts the ends (and the arrowhead) back on the edge. The same applies to
   sequence-diagram lifelines after the participant boxes are tightened.
-- **Straight connectors get no redundant midpoint.** Mermaid's routed polyline always
-  carries a midpoint even on a dead-straight edge, which shows up in OmniGraffle as a
-  stray handle. Interior points within `--simplify-tol` (default 6) of the straight chord
-  are dropped; genuine bends and self-loops are kept.
+- **Connectors are plain two-point lines.** Mermaid's routed polyline carries midpoints even
+  on a dead-straight edge, which show up in OmniGraffle as stray handles. Each connector is
+  rebuilt as a single segment between the two box centres, clipped to their borders, so it
+  has exactly two points. Self-loops keep their route because they need one, and
+  `--keep-routing` restores Mermaid's polylines. Anything still routed is passed through
+  `--simplify-tol` (default 6) to drop collinear leftovers — including sequence-diagram
+  lifelines, where clipping otherwise leaves the old endpoints behind.
 
 ### Why sequence-diagram messages are not connected
 

@@ -26,7 +26,8 @@ import re
 import sys
 import zipfile
 
-from graffle_lib import clip_to_boxes, colour, compaction_scale, rtf, simplify_points
+from graffle_lib import (clip_to_boxes, colour, compact_ranks, compaction_scale,
+                         rtf, simplify_points)
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
@@ -123,6 +124,10 @@ def main():
                     help='vertical padding around node text (default 0 = tight)')
     ap.add_argument('--edge-gap', type=float, default=16.0,
                     help='clear run to keep on each connector beyond its label (default 16)')
+    ap.add_argument('--node-gap', type=float, default=16.0,
+                    help='gap between neighbouring nodes within a rank (default 16)')
+    ap.add_argument('--keep-routing', action='store_true',
+                    help='keep Mermaid\'s routed polylines instead of straight connectors')
     ap.add_argument('--no-compact', action='store_true',
                     help='keep Mermaid spacing instead of pulling the tightened shapes together')
     ap.add_argument('--simplify-tol', type=float, default=6.0,
@@ -148,6 +153,7 @@ def main():
                for l in layout['edgeLabels']]
 
     # --- tighten shapes, then pull the layout together -----------------------
+    import math
     sizes, centres = {}, {}
     for key, n in nodes.items():
         w, h = n['w'], n['h']
@@ -159,70 +165,66 @@ def main():
         sizes[key] = (w, h)
         centres[key] = (n['x'] + n['w'] / 2, n['y'] + n['h'] / 2)
 
-    scale = 1.0
-    if not a.no_compact:
-        import math
-        base = {k: (centres[k][0] - sizes[k][0] / 2, centres[k][1] - sizes[k][1] / 2,
-                    sizes[k][0], sizes[k][1]) for k in nodes}
-        # how much of each connector its own label will occupy, along that edge
-        extent = {}
+    # tie each edge label to the edge it belongs to, so it can ride along
+    label_of = {}
+    for l in elabels:
+        best = None
         for e in edges:
-            if not (e['src'] in centres and e['tgt'] in centres):
+            if e['src'] not in centres or e['tgt'] not in centres:
                 continue
             ca, cb = centres[e['src']], centres[e['tgt']]
-            dx, dy = cb[0] - ca[0], cb[1] - ca[1]
-            d = math.hypot(dx, dy)
-            if d < 1e-6:
-                continue
             mid = ((ca[0] + cb[0]) / 2, (ca[1] + cb[1]) / 2)
-            near = min(elabels, key=lambda l: math.hypot(l['x'] - mid[0], l['y'] - mid[1]),
-                       default=None)
-            if near and math.hypot(near['x'] - mid[0], near['y'] - mid[1]) < d / 2:
-                ux, uy = dx / d, dy / d
-                extent[id(e)] = abs((near.get('textW') or near['w']) * ux) \
-                    + abs((near.get('textH') or near['h']) * uy)
-        scale = compaction_scale(base, edges, edge_gap=a.edge_gap, label_extent=extent)
+            d = math.hypot(l['x'] - mid[0], l['y'] - mid[1])
+            if best is None or d < best[0]:
+                best = (d, e)
+        if best and best[0] < 260 and id(best[1]) not in label_of:
+            label_of[id(best[1])] = l
 
-    if scale < 1.0:
-        # cluster membership from the original geometry, so the containers can be
-        # rebuilt around their (now closer together) members
-        members = {}
-        for ci, c in enumerate(layout.get('clusters', [])):
-            members[ci] = [k for k, n in nodes.items()
-                           if n['x'] >= c['x'] - 1 and n['y'] >= c['y'] - 1
-                           and n['x'] + n['w'] <= c['x'] + c['w'] + 1
-                           and n['y'] + n['h'] <= c['y'] + c['h'] + 1]
-        for k in centres:
-            centres[k] = (centres[k][0] * scale, centres[k][1] * scale)
+    scale = 1.0
+    if not a.no_compact:
+        xs = [c[0] for c in centres.values()]
+        ys = [c[1] for c in centres.values()]
+        axis_x = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+        extent = {}
         for e in edges:
-            e['points'] = [(x * scale, y * scale) for x, y in e['points']]
-        for l in elabels:
-            l['x'] *= scale
-            l['y'] *= scale
-        for ci, c in enumerate(layout.get('clusters', [])):
-            mk = members.get(ci) or []
+            l = label_of.get(id(e))
+            if l:
+                extent[id(e)] = (l.get('textW') or l['w']) if axis_x else (l.get('textH') or l['h'])
+        before = dict(centres)
+        centres, _ = compact_ranks(centres, sizes, edges, extent,
+                                   edge_gap=a.edge_gap, node_gap=a.node_gap)
+        deltas = {k: (centres[k][0] - before[k][0], centres[k][1] - before[k][1]) for k in centres}
+        for e in edges:
+            ds = deltas.get(e['src'], (0, 0))
+            dt = deltas.get(e['tgt'], (0, 0))
+            dx, dy = (ds[0] + dt[0]) / 2, (ds[1] + dt[1]) / 2
+            e['points'] = [(x + dx, y + dy) for x, y in e['points']]
+        span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1
+        moved = max((abs(d[0]) + abs(d[1]) for d in deltas.values()), default=0)
+        scale = 1.0 - moved / span
+
+        # rebuild the extents from the compacted geometry
+        allx = [centres[k][0] - sizes[k][0] / 2 for k in nodes]
+        ally = [centres[k][1] - sizes[k][1] / 2 for k in nodes]
+        allx2 = [centres[k][0] + sizes[k][0] / 2 for k in nodes]
+        ally2 = [centres[k][1] + sizes[k][1] / 2 for k in nodes]
+        for c in layout.get('clusters', []):
+            mk = [k for k, n in nodes.items()
+                  if n['x'] >= c['x'] - 1 and n['y'] >= c['y'] - 1
+                  and n['x'] + n['w'] <= c['x'] + c['w'] + 1
+                  and n['y'] + n['h'] <= c['y'] + c['h'] + 1]
             if not mk:
-                c['x'] *= scale
-                c['y'] *= scale
                 continue
             padl = min(nodes[k]['x'] for k in mk) - c['x']
             padt = min(nodes[k]['y'] for k in mk) - c['y']
             padr = c['x'] + c['w'] - max(nodes[k]['x'] + nodes[k]['w'] for k in mk)
             padb = c['y'] + c['h'] - max(nodes[k]['y'] + nodes[k]['h'] for k in mk)
-            xs0 = min(centres[k][0] - sizes[k][0] / 2 for k in mk)
-            ys0 = min(centres[k][1] - sizes[k][1] / 2 for k in mk)
-            xs1 = max(centres[k][0] + sizes[k][0] / 2 for k in mk)
-            ys1 = max(centres[k][1] + sizes[k][1] / 2 for k in mk)
-            c['x'], c['y'] = xs0 - padl, ys0 - padt
-            c['w'], c['h'] = (xs1 + padr) - (xs0 - padl), (ys1 + padb) - (ys0 - padt)
-        allx = [centres[k][0] - sizes[k][0] / 2 for k in nodes] \
-            + [c['x'] for c in layout.get('clusters', [])]
-        ally = [centres[k][1] - sizes[k][1] / 2 for k in nodes] \
-            + [c['y'] for c in layout.get('clusters', [])]
-        allx2 = [centres[k][0] + sizes[k][0] / 2 for k in nodes] \
-            + [c['x'] + c['w'] for c in layout.get('clusters', [])]
-        ally2 = [centres[k][1] + sizes[k][1] / 2 for k in nodes] \
-            + [c['y'] + c['h'] for c in layout.get('clusters', [])]
+            x0 = min(centres[k][0] - sizes[k][0] / 2 for k in mk) - padl
+            y0 = min(centres[k][1] - sizes[k][1] / 2 for k in mk) - padt
+            x1 = max(centres[k][0] + sizes[k][0] / 2 for k in mk) + padr
+            y1 = max(centres[k][1] + sizes[k][1] / 2 for k in mk) + padb
+            c['x'], c['y'], c['w'], c['h'] = x0, y0, x1 - x0, y1 - y0
+            allx.append(x0); ally.append(y0); allx2.append(x1); ally2.append(y1)
         minx, miny = min(allx), min(ally)
         vw, vh = max(allx2) - minx, max(ally2) - miny
 
@@ -273,9 +275,19 @@ def main():
 
     connected = 0
     for e in edges:
-        routed = clip_to_boxes(e['points'], rects.get(e['src']), rects.get(e['tgt']))
-        pts = [f'{{{x + ox:.2f}, {y + oy:.2f}}}'
-               for x, y in simplify_points(routed, a.simplify_tol)]
+        ra, rb = rects.get(e['src']), rects.get(e['tgt'])
+        if not a.keep_routing and ra and rb and e['src'] != e['tgt']:
+            # a plain two-point connector: no routed midpoints at all
+            seg = [(ra[0] + ra[2] / 2, ra[1] + ra[3] / 2), (rb[0] + rb[2] / 2, rb[1] + rb[3] / 2)]
+            routed = clip_to_boxes(seg, ra, rb)
+        else:
+            routed = clip_to_boxes(e['points'], ra, rb)
+        routed = simplify_points(routed, a.simplify_tol)
+        lab = label_of.get(id(e))
+        if lab is not None:
+            lab['x'] = sum(p[0] for p in routed) / len(routed)
+            lab['y'] = sum(p[1] for p in routed) / len(routed)
+        pts = [f'{{{x + ox:.2f}, {y + oy:.2f}}}' for x, y in routed]
         if len(pts) < 2:
             continue
         stroke = {'Color': colour(0.2, 0.2, 0.2), 'Width': 1.0,

@@ -245,3 +245,70 @@ def compaction_scale(rects, edges, edge_gap=24.0, label_extent=None, pair_margin
             if axis != float('inf'):
                 need = max(need, axis) if axis < 1.0 else need
     return min(1.0, need) if need > 0 else 1.0
+
+
+def compact_ranks(centres, sizes, edges, label_extent, edge_gap=16.0,
+                  node_gap=16.0, tol=8.0):
+    """Squeeze the spacing between layout ranks, one gap at a time.
+
+    A single uniform scale is dominated by the worst edge in the diagram, so one
+    wide label keeps every other connector long. Dagre lays nodes out in ranks
+    along one axis, so instead each gap between consecutive ranks is closed
+    independently, down to what the widest label crossing *that* gap needs.
+
+    Returns new centres; cross-axis positions and rank order are untouched.
+    """
+    if not centres:
+        return centres, 'x'
+    xs = [c[0] for c in centres.values()]
+    ys = [c[1] for c in centres.values()]
+    axis = 0 if (max(xs) - min(xs)) >= (max(ys) - min(ys)) else 1
+    half = {k: (sizes[k][axis] / 2) for k in centres}
+
+    order = sorted(centres, key=lambda k: centres[k][axis])
+    ranks, cur = [], [order[0]]
+    for k in order[1:]:
+        if abs(centres[k][axis] - centres[cur[-1]][axis]) <= tol:
+            cur.append(k)
+        else:
+            ranks.append(cur)
+            cur = [k]
+    ranks.append(cur)
+    if len(ranks) < 2:
+        return centres, 'x' if axis == 0 else 'y'
+
+    rank_of = {k: i for i, r in enumerate(ranks) for k in r}
+    shift = 0.0
+    new = dict(centres)
+    for i in range(1, len(ranks)):
+        prev_edge = max(new[k][axis] + half[k] for k in ranks[i - 1])
+        this_edge = min(centres[k][axis] + shift - half[k] for k in ranks[i])
+        need = edge_gap
+        for e in edges:
+            s, t = e.get('src'), e.get('tgt')
+            if s not in rank_of or t not in rank_of or s == t:
+                continue
+            lo, hi = sorted((rank_of[s], rank_of[t]))
+            if lo < i <= hi:                     # this edge crosses the gap
+                need = max(need, edge_gap + label_extent.get(id(e), 0.0))
+        delta = (prev_edge + need) - this_edge
+        shift += delta
+        for k in ranks[i]:
+            c = centres[k]
+            new[k] = (c[0] + shift, c[1]) if axis == 0 else (c[0], c[1] + shift)
+
+    # Close the cross-axis gaps inside each rank too, otherwise diagonal edges
+    # stay long even though the flow axis is tight.
+    cross = 1 - axis
+    for r in ranks:
+        if len(r) < 2:
+            continue
+        seq = sorted(r, key=lambda k: new[k][cross])
+        run = 0.0
+        for j in range(1, len(seq)):
+            prev_hi = new[seq[j - 1]][cross] + sizes[seq[j - 1]][cross] / 2
+            cur_lo = new[seq[j]][cross] + run - sizes[seq[j]][cross] / 2
+            run += (prev_hi + node_gap) - cur_lo
+            c = new[seq[j]]
+            new[seq[j]] = (c[0], c[1] + run) if cross == 1 else (c[0] + run, c[1])
+    return new, 'x' if axis == 0 else 'y'

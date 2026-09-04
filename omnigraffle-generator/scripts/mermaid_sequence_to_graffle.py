@@ -25,7 +25,8 @@ import json
 import pathlib
 import sys
 
-from graffle_lib import clip_to_boxes, colour, line, shape, write_graffle
+from graffle_lib import (clip_to_boxes, colour, line, shape, simplify_points,
+                         write_graffle)
 
 ACTOR_FILL = colour(0.918, 0.918, 0.918)     # #eaeaea
 ACTOR_STROKE = colour(0.4, 0.4, 0.4)         # #666
@@ -79,8 +80,9 @@ def main():
     for lf in L['lifelines']:
         # the participant boxes were tightened, so the lifeline must be re-clipped
         # to their new borders or it starts short of them
-        seg = clip_to_boxes([(lf['x1'], lf['y1']), (lf['x2'], lf['y2'])],
-                            top_rect.get(lf['id']), bottom_rect.get(lf['id']))
+        # clipping leaves the old endpoints behind as collinear leftovers
+        seg = simplify_points(clip_to_boxes([(lf['x1'], lf['y1']), (lf['x2'], lf['y2'])],
+                                            top_rect.get(lf['id']), bottom_rect.get(lf['id'])))
         g = line(gid, [(x + ox, y + oy) for x, y in seg],
                  stroke=LIFELINE_COLOUR, width=0.75, arrow=False,
                  tail_id=top_id.get(lf['id']), head_id=bottom_id.get(lf['id']))
