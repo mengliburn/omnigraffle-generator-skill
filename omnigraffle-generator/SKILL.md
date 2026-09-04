@@ -111,6 +111,14 @@ All established by drawing the equivalent objects in OmniGraffle and reading the
   `--simplify-tol` (default 6) to drop collinear leftovers — including sequence-diagram
   lifelines, where clipping otherwise leaves the old endpoints behind.
 
+### Canvas settings
+
+Every canvas is written flexible rather than fixed: `CanvasSizingMode = 1`
+(what OmniGraffle writes for `adjusts pages = true`), so it grows on every side as
+content moves, and `PageBreaks = 'NO'` so no page-break rules are drawn across the
+diagram. `HPages`/`VPages` are seeded at 1 and OmniGraffle recalculates them from the
+content.
+
 ### Why sequence-diagram messages are not connected
 
 OmniGraffle **re-routes a connected line to its target's connection point as soon as the

@@ -65,11 +65,17 @@ def main():
         s = offset_ids(src[0], i * a.id_stride)
         s['SheetTitle'] = title
         s['UniqueID'] = i + 1
+        s['CanvasSizingMode'] = 1      # flexible canvas, not a fixed sheet
+        s['AutoAdjust'] = 1
+        s['HPages'] = 1
+        s['VPages'] = 1
         sheets.append(s)
         print(f'  canvas {i + 1}: {title!r} '
               f'objects={len(s.get("GraphicsList", []))} size={s.get("CanvasSize")}')
 
     doc['Sheets'] = sheets
+    doc['PageBreaks'] = 'NO'          # don't draw page-break rules
+    doc['UseEntirePage'] = False
     with zipfile.ZipFile(a.out, 'w', zipfile.ZIP_DEFLATED) as z:
         for item in first.namelist():
             z.writestr(item, plistlib.dumps(doc, fmt=fmt) if item == 'data.plist'

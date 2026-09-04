@@ -108,6 +108,15 @@ def write_graffle(path, graphics, title, canvas_w, canvas_h):
     sheet['GraphicsList'] = graphics
     sheet['SheetTitle'] = title
     sheet['CanvasSize'] = f'{{{canvas_w:.2f}, {canvas_h:.2f}}}'
+    # Flexible canvas that grows on every side, rather than a fixed sheet.
+    # CanvasSizingMode 1 is what OmniGraffle writes for "adjusts pages" = true.
+    sheet['CanvasSizingMode'] = 1
+    sheet['AutoAdjust'] = 1
+    sheet['PrintOnePage'] = False
+    sheet['HPages'] = 1
+    sheet['VPages'] = 1
+    doc['PageBreaks'] = 'NO'          # no page-break rules drawn across the canvas
+    doc['UseEntirePage'] = False
     doc['Sheets'] = [sheet]
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('data.plist', plistlib.dumps(doc, fmt=plistlib.FMT_BINARY))
