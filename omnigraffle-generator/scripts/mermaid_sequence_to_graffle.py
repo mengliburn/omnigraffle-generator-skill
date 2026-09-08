@@ -25,8 +25,8 @@ import json
 import pathlib
 import sys
 
-from graffle_lib import (clip_to_boxes, colour, line, shape, simplify_points,
-                         write_graffle)
+from graffle_lib import (WRAP_SLACK, clip_to_boxes, colour, line, shape,
+                         simplify_points, write_graffle)
 
 ACTOR_FILL = colour(0.918, 0.918, 0.918)     # #eaeaea
 ACTOR_STROKE = colour(0.4, 0.4, 0.4)         # #666
@@ -63,7 +63,7 @@ def main():
         # tighten to the caption, keeping the centre so lifelines stay aligned
         w, h = act['w'], act['h']
         if act.get('textW'):
-            w = min(w, act['textW'] + a.pad_x)
+            w = min(w, act['textW'] + a.pad_x + WRAP_SLACK)
             h = min(h, act['textH'] + a.pad_y)
         cx, cy = act['x'] + act['w'] / 2, act['y'] + act['h'] / 2
         g = shape(gid, cx - w / 2 + ox, cy - h / 2 + oy, w, h,

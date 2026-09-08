@@ -17,6 +17,7 @@ Each check corresponds to a defect that actually shipped at some point:
   hidden lines      an opaque label must not blanket the connector it names
   overlaps          compaction must never push two shapes into each other
   canvas            flexible on all four sides, page-break rules off
+  wrap              word wrap left enabled on every text shape
 """
 import math
 import pathlib
@@ -78,7 +79,7 @@ def main():
     doc = plistlib.loads(zipfile.ZipFile(path).read('data.plist'))
     sheets = doc['Sheets']
 
-    groups = midpoints = gaps_bad = hidden = overlaps = 0
+    groups = midpoints = gaps_bad = hidden = overlaps = nowrap = 0
     lines = shapes = 0
     worst_gap = 0.0
     problems = []
@@ -109,6 +110,8 @@ def main():
                 groups += 1
             if g['Class'] == 'ShapedGraphic':
                 shapes += 1
+                if g.get('Wrap') == 'NO':
+                    nowrap += 1
                 continue
             if g['Class'] != 'LineGraphic':
                 continue
@@ -148,6 +151,7 @@ def main():
         ('endpoints off their box border', gaps_bad, 0),
         ('lines fully hidden by a label', hidden, 0),
         ('overlapping shapes', overlaps, 0),
+        ('shapes with word wrap off', nowrap, 0),
     ]
     for name, got, want in checks:
         print(f'  {name:34} {got}   (want {want})')

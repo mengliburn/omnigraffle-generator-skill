@@ -26,8 +26,8 @@ import re
 import sys
 import zipfile
 
-from graffle_lib import (clip_to_boxes, colour, compact_ranks, compaction_scale,
-                         rtf, simplify_points)
+from graffle_lib import (WRAP_SLACK, clip_to_boxes, colour, compact_ranks,
+                         compaction_scale, rtf, simplify_points)
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 SHAPES = {'rect': 'Rectangle', 'path': 'Cylinder', 'polygon': 'Rectangle',
@@ -160,7 +160,7 @@ def main():
         # Mermaid pads its containers generously. Shrink plain rectangles to their
         # measured text; leave cylinders/stadiums alone, their caps need the room.
         if n.get('shape') == 'rect' and n.get('textW'):
-            w = min(w, n['textW'] + a.pad_x)
+            w = min(w, n['textW'] + a.pad_x + WRAP_SLACK)
             h = min(h, n['textH'] + a.pad_y)
         sizes[key] = (w, h)
         centres[key] = (n['x'] + n['w'] / 2, n['y'] + n['h'] / 2)
@@ -245,8 +245,6 @@ def main():
             'Class': 'ShapedGraphic', 'ID': gid,
             'Shape': shape_name,
             'Bounds': f'{{{{{cx - w / 2 + ox:.2f}, {cy - h / 2 + oy:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
-            # bounds are exactly the text width, so forbid wrapping outright
-            'Wrap': 'NO',
             'Style': {
                 'fill': {'Color': colour(0.925, 0.925, 1.0)},
                 'stroke': {'Color': colour(0.576, 0.439, 0.859), 'Width': 1.0},
@@ -311,11 +309,10 @@ def main():
     for lb in elabels:
         tw = lb.get('textW') or lb['w']
         th = lb.get('textH') or lb['h']
-        w, h = max(tw, 20.0) + a.pad_x, max(th, 14.0) + a.pad_y
+        w, h = max(tw, 20.0) + a.pad_x + WRAP_SLACK, max(th, 14.0) + a.pad_y
         label_gfx.append({
             'Class': 'ShapedGraphic', 'ID': gid, 'Shape': 'Rectangle',
             'Bounds': f'{{{{{lb["x"] + ox - w / 2:.2f}, {lb["y"] + oy - h / 2:.2f}}}, {{{w:.2f}, {h:.2f}}}}}',
-            'Wrap': 'NO',
             # opaque fill so the label masks the connector underneath, as Mermaid does
             'Style': {'fill': {'Color': colour(1.0, 1.0, 1.0)},
                       'stroke': {'Draws': 'NO'}, 'shadow': {'Draws': 'NO'}},

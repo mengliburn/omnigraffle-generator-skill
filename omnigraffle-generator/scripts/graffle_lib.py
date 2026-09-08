@@ -19,6 +19,10 @@ import zipfile
 
 TEMPLATE = pathlib.Path(__file__).with_name('graffle_template.plist')
 
+# Word wrap stays enabled, so a box sized to the exact text width sits right on
+# the wrap boundary. A couple of units of slack keeps the intended line breaks.
+WRAP_SLACK = 2.0
+
 
 def _rtf_escape(s):
     """RTF is cp1252; non-ASCII must use \\uN? escapes or it arrives as mojibake."""
@@ -68,8 +72,9 @@ def shape(gid, x, y, w, h, text='', fill=None, stroke=None, shape_name='Rectangl
     style['stroke'] = {'Color': stroke, 'Width': 1.0} if stroke else {'Draws': 'NO'}
     g = {'Class': 'ShapedGraphic', 'ID': gid, 'Shape': shape_name,
          'Bounds': bounds(x, y, w, h), 'Style': style,
-         # bounds are exactly the text width, so forbid wrapping outright
-         'Wrap': 'NO',
+         # No Wrap key means wrap is ON, which is what OmniGraffle writes for a
+         # normal shape. Widths carry WRAP_SLACK so the current text still lays
+         # out on its intended lines.
          'Text': {'Text': rtf(text), 'TextAlongPathGlyphAnchor': 'center',
                   'Pad': 0, 'VerticalPad': 0}}
     if font_size:

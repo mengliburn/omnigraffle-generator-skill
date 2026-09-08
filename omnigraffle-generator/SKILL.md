@@ -111,8 +111,14 @@ SVG renders at 16px — so an SVG-derived width is 4/3 too large. Measuring with
 `canvas.measureText` at **12px Helvetica** reproduces OmniGraffle's widths to within 0.5%
 (ratios 0.7473–0.7506 over four strings), and a line box is exactly **14 units** tall once
 `Text.Pad`/`VerticalPad` are zeroed. Checked against `autosizing: full` — identical to the
-unit on every rectangle. `Wrap: NO` is required because the bounds are exactly the text
-width, and any sub-pixel difference would otherwise re-wrap the label.
+unit on every rectangle.
+
+**Word wrap stays on.** A shape with no `Wrap` key wraps, which is what OmniGraffle writes
+for a normal shape; `Wrap: 'NO'` disables it. Since the bounds are otherwise exactly the
+text width, widths carry `WRAP_SLACK` (2 units) so the current text keeps its intended line
+breaks while wrap remains available for later editing. Verified with
+`autosizing: vertically`, which grows height at the current width and so exposes any
+re-wrap: 0 of 114 shapes re-wrapped.
 
 ### SVG importer limitations
 
